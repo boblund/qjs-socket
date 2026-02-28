@@ -14,6 +14,7 @@ os.signal( os.SIGINT, () => {
 	std.exit( 0 );
 } );
 
+/* socket server app worker */
 const workerFileName = '/tmp/clientServer.mjs';
 const worker_src = `
 import * as os from "os";
@@ -35,13 +36,13 @@ function handle_msg( e ) {
 	let fd;
 	switch( ev.type ) {
 		case "fd":
-			console.log( "client connected on fd:", ev.fd );
+			console.log( \`client connected on fd: \${ ev.fd }\`,  );
 			fd = ev.fd;
 			clientServer( ev.fd );
 			break;
 
 		case "abort":
-			console.log( 'worker done:', fd );
+			console.log( \`worker done: \${ fd }\` );
 			parent.onmessage = null; /* terminate the worker */
 			break;
 	}
@@ -53,12 +54,12 @@ function clientServer( client_fd ){
 	while( true ){
 		if ( ( n = os.read( client_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
 			const msg = String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) );
-			console.log( 'client msg:', msg );
+			console.log( \`client msg: \${ msg }\` );
 			let ab = stringToAb( 'clientServer reply: ' + msg );
 			os.write( client_fd, ab, 0, ab.byteLength );
 			readBuf.fill( 0 );
 		} else {
-			console.log( 'client disconnected on fd', client_fd );
+			console.log( \`client disconnected on fd \${ client_fd }\` );
 			os.setReadHandler( client_fd, null );
 			os.close( client_fd );
 			parent.postMessage( { type: "done", fd: client_fd } );
