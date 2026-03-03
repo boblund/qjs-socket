@@ -26,12 +26,6 @@ function readFile( name, mode = '' ) {
 	return mode === '' ? Array.from( result, b => String.fromCharCode( b ) ).join( '' ) : result;
 }
 
-function* chunkString( str, chunkSize = 16384 ) {  // 16KB default
-	for ( let i = 0; i < str.length; i += chunkSize ) {
-		yield str.slice( i, i + chunkSize );
-	}
-}
-
 const paths = {
 	"/favicon.ico": {
 		body: readFile( 'favicon.ico', 'b' ),
@@ -54,7 +48,6 @@ function parseRequest( data ) {
 	const str = data.toString();
 	const lines = str.split( '\r\n' );
 	const [ method, path ] = lines[0].split( ' ' );
-	// Very naive, no headers parsing
 	return { method, path: path || '/' };
 }
 
@@ -88,47 +81,35 @@ function handle_msg( e ) {
 }
 
 function socketWrite( fd, status, statusText, contentType, body ){
-	//console.log( 'socketWrite:', fd, status, statusText, contentType, body.length );
-	if ( contentType === 'image/png' || contentType === 'image/ico' ) {
-		let headers = stringToAb(
-			`HTTP/1.1 200 OK\r\nContent-Type: ${ contentType }\r\nContent-Length: ${ body.length }\r\n\r\n`
-		);
-		//console.log( `body check: ${ body.buffer instanceof ArrayBuffer ? 'body is ArrayBuffer' : 'body is ArrayBuffer' }` );
-		os.write( fd, headers, 0, headers.byteLength );
-		os.write( fd, body.buffer, 0, body.buffer.byteLength );
-		return;
-	}
-
+	// chunked transfer is always used, whether it's needed or not
+	const CHUNKSIZE = 128 * 1024;
 	const headers = stringToAb(
 		`HTTP/1.1 ${ status } ${ statusText }\r\n` +
 		`Content-Type: ${ contentType }\r\n` +
 		'Transfer-Encoding: chunked\r\n' +
 		'Connection: keep-alive\r\n\r\n'
 	);
-
-	//console.log( `socketWrite headers: ${ headers }` );
 	os.write( fd, headers, 0, headers.byteLength );
 
-	// C-LEVEL chunk loop (NO QuickJS calls)
-	const chunkSize = 128 * 1024;
-	let pos = 0;
-	let chunkHeader, chunk;
-	while ( pos < body.length ) {
-		let chunkLen = ( pos + chunkSize < body.length ) ? chunkSize : ( body.length - pos );
-		//chunk = stringToAb( `${ chunkLen.toString( 16 ) }\r\n` + body.slice( pos, pos + chunkLen ) + '\r\n' );
-		//os.write( fd, chunk, 0, chunk.byteLength );
-		chunkHeader = stringToAb( `${ chunkLen.toString( 16 ) }\r\n` );
+	const chunkTrailer = stringToAb( '\r\n' );
+	const bodyLen = body instanceof ArrayBuffer || body instanceof Uint8Array ? body.byteLength : body.length;
+
+	for( let pos = 0; pos < body.length; ) {
+		const chunkLen = ( pos + CHUNKSIZE < bodyLen ) ? CHUNKSIZE : ( bodyLen - pos );
+		const chunkHeader = stringToAb( `${ chunkLen.toString( 16 ) }\r\n` );
+		const chunk = body instanceof ArrayBuffer || body instanceof Uint8Array
+			? body.slice( pos, pos + chunkLen ).buffer
+			: stringToAb( body.slice( pos, pos + chunkLen ) );
+
 		os.write( fd, chunkHeader, 0, chunkHeader.byteLength );
-		chunk = stringToAb( body.slice( pos, pos + chunkLen ) + '\r\n' );
-		console.log( `chunk: byteLength: ${ chunk.byteLength }, pos: ${ pos }, chunkLen: ${ chunkLen }` );
 		os.write( fd, chunk, 0, chunk.byteLength );
+		os.write( fd, chunkTrailer, 0, chunkTrailer.byteLength );
 
 		pos += chunkLen;
 	}
 
-	// Final zero chunk
-	chunk = stringToAb( '0\r\n\r\n' );
-	os.write( fd, chunk, 0, chunk.byteLength );
+	const endOfResp = stringToAb( '0\r\n\r\n' );
+	os.write( fd, endOfResp, 0, endOfResp.byteLength );
 }
 
 function httpServer( client_fd ){
@@ -136,10 +117,7 @@ function httpServer( client_fd ){
 	let n;
 	while( true ){
 		if ( ( n = os.read( client_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
-			//const request = String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) );
-			//console.log( `client msg: ${ request }` );
 			const req = parseRequest( String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) ) );
-			//console.log( `httpServer req: ${ JSON.stringify( req ) }` );
 			const path = req.path === '/' ? '/index.html' : pathNames.includes( req.path ) ? req.path : '';
 			console.log( 'request:', req.path );
 			if( path !== '' ){
