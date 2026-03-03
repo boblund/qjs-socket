@@ -26,20 +26,40 @@ function readFile( name, mode = '' ) {
 	return mode === '' ? Array.from( result, b => String.fromCharCode( b ) ).join( '' ) : result;
 }
 
-const paths = {
-	"/favicon.ico": {
-		body: readFile( 'favicon.ico', 'b' ),
-		type: 'image/png'
-	},
-	"/index.html": {
-		body: readFile( 'index.html' ),
-		type: 'text/html;charset=utf-8'
-	},
-	"/index.bundle-2.0.1.js": {
-		body: readFile( 'index.bundle-2.0.1.js' ),
-		type: 'text/javascript'
-	}
-};
+const [ files, err ] = os.readdir( './files' );
+const paths = [];
+if( err ){
+	console.error( `Reading ./files error ${ -err }` );
+	std.exit( 1 );
+} else {
+	files.filter( file => file !== '.' && file !== '..' ).forEach( file => {
+		const ext = file.split( '.' ).pop();
+		switch( ext ){
+			case 'ico':
+			case 'png':
+				paths[ `/${ file }` ] = {
+					body: readFile( `./files/${ file }`, 'b' ),
+					type: `image/${ ext }`
+				};
+				break;
+
+			case 'html':
+				paths[ `/${ file }` ] = {
+					body: readFile( `./files/${ file }` ),
+					type: 'text/html;charset=utf-8'
+				};
+				break;
+
+			case 'js':
+			case 'mjs':
+				paths[ `/${ file }` ] = {
+					body: readFile( `./files/${ file }` ),
+					type: 'text/javascript'
+				};
+				break;
+		}
+	} );
+}
 
 const pathNames = Object.keys( paths );
 
@@ -63,18 +83,19 @@ function stringToAb( str ) {
 const READBUF_CHUNK_SIZE = 4096;
 let parent = os.Worker.parent;
 
-function handle_msg( e ) {
+parent.onmessage = function( e ){
+//function handle_msg( e ) {
 	let ev = e.data;
 	let fd;
 	switch( ev.type ) {
 		case "fd":
-			console.log( `client connected on fd: ${ ev.fd }`,  );
+			//console.log( `client connected on fd: ${ ev.fd }`,  );
 			fd = ev.fd;
 			httpServer( ev.fd );
 			break;
 
 		case "abort":
-			console.log( `worker done: ${ fd }` );
+			//console.log( `worker done: ${ fd }` );
 			parent.onmessage = null; /* terminate the worker */
 			break;
 	}
@@ -113,13 +134,14 @@ function socketWrite( fd, status, statusText, contentType, body ){
 }
 
 function httpServer( client_fd ){
+	console.log( `httpServer listening on fd: ${ client_fd }`,  );
 	const readBuf = new Uint8Array( READBUF_CHUNK_SIZE );
 	let n;
 	while( true ){
 		if ( ( n = os.read( client_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
 			const req = parseRequest( String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) ) );
 			const path = req.path === '/' ? '/index.html' : pathNames.includes( req.path ) ? req.path : '';
-			console.log( 'request:', req.path );
+			//console.log( 'request:', req.path );
 			if( path !== '' ){
 				socketWrite( client_fd, 200, "OK", paths[ path ].type, paths[ path ].body );
 			} else {
@@ -134,10 +156,10 @@ function httpServer( client_fd ){
 		}
 	}
 };
-
+/*
 function worker_main() {
 	parent.onmessage = handle_msg;
 }
 
 worker_main();
-
+*/
