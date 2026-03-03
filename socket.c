@@ -253,6 +253,8 @@ static JSValue js_server_listen(JSContext *ctx, JSValueConst this_val,
 		addr.sin_addr.s_addr = INADDR_ANY;
 		addr.sin_port = htons(port);
 
+		int opt = 1;
+		setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 		if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
 				perror("bind");
 				close(listen_fd);
