@@ -88,7 +88,7 @@ function stringToAb( str ) {
 	const buf = new ArrayBuffer( len );
 	const bytes = new Uint8Array( buf );
 	let i = 0;
-	while ( i < len ) bytes[i++] = str.charCodeAt( i++ ) & 0xFF;
+	while ( i < len ) bytes[i] = str.charCodeAt( i++ ) & 0xFF;
 	return buf;
 }
 
@@ -137,7 +137,7 @@ os.setReadHandler( pipe_fd, () => {
 			if ( ( n = os.read( client_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
 				const req = parseRequest( String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) ) );
 				const path = req.path === '/' ? '/index.html' : pathNames.includes( req.path ) ? req.path : '';
-				//console.log( 'request:', req.path );
+				console.log( 'request:', req.path );
 				if( path !== '' ){
 					socketWrite( client_fd, 200, "OK", paths[ path ].type, paths[ path ].body );
 				} else {
