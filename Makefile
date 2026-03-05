@@ -8,8 +8,20 @@ endif
 
 all: $(TARGET)
 
-$(TARGET).c:  $(TARGET).js
-	$(QJSC)  -e -M socket.so,socket -o $(TARGET).c $<
+bundleFiles: bundleFiles.mjs atobtoa.mjs
+	$(QJSC) -o bundleFiles bundleFiles.mjs atobtoa.mjs
+
+HTTP_PATHS_FILES := $(wildcard files/*)
+
+httpPaths.mjs: $(HTTP_PATHS_FILES) bundleFiles
+	./bundleFiles $(HTTP_PATHS_FILES)
+
+$(TARGET).c:  $(TARGET).js $(if $(filter httpServer,$(TARGET)),httpPaths.mjs)
+ifeq ($(TARGET),httpServer)
+	$(QJSC) -e -M socket.so,socket -o $(TARGET).c $< httpPaths.mjs atobtoa.mjs
+else
+	$(QJSC) -e -M socket.so,socket -o $(TARGET).c $<
+endif
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -17,7 +29,6 @@ $(TARGET).c:  $(TARGET).js
 $(TARGET): $(TARGET).o socket.o
 	$(CC) $(LDFLAGS) -o $(TARGET) $(TARGET).o socket.o
 
-# Special target: build only the shared library
 ifeq ($(TARGET),socketso)
 $(TARGET):
 	$(CC) -fPIC -shared -DJS_SHARED_LIBRARY -o socket.so socket.c \
@@ -29,6 +40,6 @@ clean:
 	rm -f $(TARGET).o socket.o $(TARGET).c
 
 clean-all: clean
-	rm -f $(TARGET)
+	rm -f $(TARGET) bundleFiles httpPaths.mjs
 
 .PHONY: all run clean

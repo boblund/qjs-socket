@@ -1,6 +1,8 @@
 import * as os from 'os';
 import * as std from 'std';
 import { Server } from 'socket.so';
+import { paths } from 'httpPaths.mjs';
+import { btoa } from 'atobtoa.mjs';
 
 os.signal( os.SIGINT, () => {
 	console.log( 'server stopped' );
@@ -13,65 +15,13 @@ const { stop, pipe_fd } = server.listen( port );
 console.log( `Socket server started on port: ${ port }` );
 const fdBuff = new Uint8Array( 4 );
 
-function readFile( name, mode = '' ) {
-	let f = std.open( name, `r${ mode }` );
-	let totalLen = 0;
-	const chunks = [];  // array of Uint8Array
-
-	while ( true ) {
-		let buf = new Uint8Array( 4096 );
-		let len = f.read( buf.buffer, 0, buf.length );
-		if ( len <= 0 ) break;
-		chunks.push( buf.subarray( 0, len ) );  // keep raw bytes
-		totalLen += len;
+// Entries in paths of type image have a base64 encoded body
+// convert back to Uint8Array
+Object.keys( paths ).forEach( path => {
+	if( paths[ path ].type.includes( 'image' ) ){
+		paths[ path ].body = btoa( paths[ path ].body );
 	}
-	f.close();
-
-	// Join into final Uint8Array
-	let result = new Uint8Array( totalLen );
-	let offset = 0;
-	for ( let chunk of chunks ) {
-		result.set( chunk, offset );
-		offset += chunk.length;
-	}
-
-	return mode === '' ? Array.from( result, b => String.fromCharCode( b ) ).join( '' ) : result;
-}
-
-const [ files, err ] = os.readdir( './files' );
-const paths = [];
-if( err ){
-	console.error( `Reading ./files error ${ -err }` );
-	std.exit( 1 );
-} else {
-	files.filter( file => file !== '.' && file !== '..' ).forEach( file => {
-		const ext = file.split( '.' ).pop();
-		switch( ext ){
-			case 'ico':
-			case 'png':
-				paths[ `/${ file }` ] = {
-					body: readFile( `./files/${ file }`, 'b' ),
-					type: `image/${ ext }`
-				};
-				break;
-
-			case 'html':
-				paths[ `/${ file }` ] = {
-					body: readFile( `./files/${ file }` ),
-					type: 'text/html;charset=utf-8'
-				};
-				break;
-
-			case 'js':
-			case 'mjs':
-				paths[ `/${ file }` ] = {
-					body: readFile( `./files/${ file }` ),
-					type: 'text/javascript'
-				};
-				break;
-		}
-	} );
-}
+} );
 
 const pathNames = Object.keys( paths );
 
