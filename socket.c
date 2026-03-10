@@ -33,7 +33,7 @@ static JSClassID js_client_class_id;
 static void js_client_finalizer(JSRuntime *rt, JSValue val)
 {
     JSClientData *s = JS_GetOpaque(val, js_client_class_id);
-		printf("FINALIZER called for %p\n", s);
+		//printf("FINALIZER called for %p\n", s);
     if (s == NULL ) return;
 		if (s->socket_fd >= 0) {
 			close(s->socket_fd);
@@ -153,7 +153,7 @@ static JSClassID js_server_class_id;
 static void js_server_finalizer(JSRuntime *rt, JSValue val)
 {
     JSServerData *s = JS_GetOpaque(val, js_server_class_id);
-		printf("FINALIZER called for %p\n", s);
+		//printf("FINALIZER called for %p\n", s);
     if (s == NULL ) return;
 		if (s->socket_fd >= 0) {
 			close(s->socket_fd);
