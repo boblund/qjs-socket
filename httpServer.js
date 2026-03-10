@@ -76,29 +76,30 @@ function socketWrite( fd, status, statusText, contentType, body ){
 	os.write( fd, endOfResp, 0, endOfResp.byteLength );
 }
 
+function httpServerApp( client_fd ){
+	const readBuf = new Uint8Array( READBUF_CHUNK_SIZE );
+	let n;
+	if ( ( n = os.read( client_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
+		const req = parseRequest( String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) ) );
+		const path = req.path === '/' ? '/index.html' : pathNames.includes( req.path ) ? req.path : '';
+		console.log( 'request:', req.path );
+		if( path !== '' ){
+			socketWrite( client_fd, 200, "OK", paths[ path ].type, paths[ path ].body );
+		} else {
+			socketWrite( client_fd, 404, 'Not Found', {}, `404 ${ path.req } not Found\n` );
+		}
+	} else {
+		console.log( `client disconnected on fd ${ client_fd }` );
+		os.setReadHandler( client_fd, null );
+		os.close( client_fd );
+	}
+}
 // Read pipe from C side to get client attaches
 os.setReadHandler( pipe_fd, () => {
 	if( os.read( pipe_fd, fdBuff.buffer, 0, fdBuff.length ) > 0 ){
 		const client_fd = new DataView( fdBuff.buffer ).getInt32( 0, true );
 		console.log( `httpServer client on fd: ${ client_fd }` );
-		os.setReadHandler( client_fd, () => {
-			const readBuf = new Uint8Array( READBUF_CHUNK_SIZE );
-			let n;
-			if ( ( n = os.read( client_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
-				const req = parseRequest( String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) ) );
-				const path = req.path === '/' ? '/index.html' : pathNames.includes( req.path ) ? req.path : '';
-				console.log( 'request:', req.path );
-				if( path !== '' ){
-					socketWrite( client_fd, 200, "OK", paths[ path ].type, paths[ path ].body );
-				} else {
-					socketWrite( client_fd, 404, 'Not Found', {}, `404 ${ path.req } not Found\n` );
-				}
-			} else {
-				console.log( `client disconnected on fd ${ client_fd }` );
-				os.setReadHandler( client_fd, null );
-				os.close( client_fd );
-			}
-		} );
+		os.setReadHandler( client_fd, () => { httpServerApp( client_fd ); } );
 	} else {
 		console.log( 'server stopping' );
 		os.close( pipe_fd );
