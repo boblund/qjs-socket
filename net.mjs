@@ -63,7 +63,7 @@ export function createConnection(){
 	let fd, ref_client;
 
 	const socket = {
-		connect( port, host, func ){
+		connect( port, host, func = undefined ){
 			const CHUNK_SIZE = 4096;
 			const client = new Client();
 			ref_client = client; // keeps client alive, set to undefine when done
@@ -89,7 +89,7 @@ export function createConnection(){
 				os.setReadHandler( fd, null );
 				ref_client = undefined;
 			} );
-			func();
+			if( typeof func === 'function' ) func();
 		},
 
 		end( aBuf = undefined ){
