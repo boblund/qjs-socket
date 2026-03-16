@@ -53,16 +53,16 @@ server: server.o socket.o
 	$(CC) $(LDFLAGS) -o server server.o socket.o
 
 # httpServer
-bundleFiles: bundleFiles.mjs atobtoa.mjs
-	$(QJSC) -o bundleFiles bundleFiles.mjs atobtoa.mjs
+bundleFiles: bundleFiles.mjs abConversions.mjs
+	$(QJSC) -o bundleFiles bundleFiles.mjs abConversions.mjs
 
 HTTP_PATHS_FILES := $(wildcard files/*)
 
 httpPaths.mjs: $(HTTP_PATHS_FILES) bundleFiles
 	./bundleFiles $(HTTP_PATHS_FILES)
 
-httpServer.c: httpServer.js httpPaths.mjs atobtoa.mjs
-	$(QJSC) -e -M socket.so,socket -o httpServer.c httpServer.js httpPaths.mjs atobtoa.mjs
+httpServer.c: httpServer.js httpPaths.mjs abConversions.mjs
+	$(QJSC) -e -M socket.so,socket -o httpServer.c httpServer.js httpPaths.mjs abConversions.mjs
 
 httpServer.o: httpServer.c
 	$(CC) $(CFLAGS) -c httpServer.c -o httpServer.o
