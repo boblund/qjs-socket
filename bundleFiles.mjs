@@ -1,11 +1,11 @@
 import * as std from 'std';
 import * as os from 'os';
-import { atob } from 'atobtoa.mjs';
+import { toBase64 } from 'abConversions.mjs';
 
 function readFile( name, mode = '' ) {
 	let f = std.open( name, `r${ mode }` );
 
-	if( mode = '' ){
+	if( mode == '' ){
 		const s = f.readAsString();
 		f.close();
 		return s;
@@ -31,7 +31,7 @@ function readFile( name, mode = '' ) {
 		offset += chunk.length;
 	}
 
-	return mode === '' ? Array.from( result, b => String.fromCharCode( b ) ).join( '' ) : result;
+	return result;
 }
 
 const paths = {};
@@ -46,7 +46,7 @@ if( err ){
 			case 'ico':
 			case 'png':
 				paths[ `/${ file }` ] = {
-					body: atob( readFile( `./files/${ file }`, 'b' ) ),
+					body: toBase64( readFile( `./files/${ file }`, 'b' ) ),
 					type: `image/${ ext }`
 				};
 				break;
