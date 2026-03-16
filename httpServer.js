@@ -2,7 +2,7 @@ import * as os from 'os';
 import * as std from 'std';
 import { Server } from 'socket.so';
 import { paths } from 'httpPaths.mjs';
-import { btoa } from 'atobtoa.mjs';
+import { fromBase64, stringToAb } from 'abConversions.mjs';
 
 os.signal( os.SIGINT, () => {
 	console.log( 'server stopped' );
@@ -19,7 +19,7 @@ const fdBuff = new Uint8Array( 4 );
 // convert back to Uint8Array
 Object.keys( paths ).forEach( path => {
 	if( paths[ path ].type.includes( 'image' ) ){
-		paths[ path ].body = btoa( paths[ path ].body );
+		paths[ path ].body = fromBase64( paths[ path ].body );
 	}
 } );
 
@@ -31,15 +31,6 @@ function parseRequest( data ) {
 	const lines = str.split( '\r\n' );
 	const [ method, path ] = lines[0].split( ' ' );
 	return { method, path: path || '/' };
-}
-
-function stringToAb( str ) {
-	const len = str.length;
-	const buf = new ArrayBuffer( len );
-	const bytes = new Uint8Array( buf );
-	let i = 0;
-	while ( i < len ) bytes[i] = str.charCodeAt( i++ ) & 0xFF;
-	return buf;
 }
 
 const READBUF_CHUNK_SIZE = 4096;
