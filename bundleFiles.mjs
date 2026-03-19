@@ -1,6 +1,17 @@
 import * as std from 'std';
-import * as os from 'os';
 import { toBase64 } from 'abConversions.mjs';
+
+function pipe( cmd ){
+	const CHUNK_SIZE = 16 * 1024;
+	let buf = new ArrayBuffer( CHUNK_SIZE );
+	let fd = std.popen( cmd, 'r' );
+	let n = 0, output = '';
+	while( ( n = fd.read( buf, 0, CHUNK_SIZE ) ) > 0 ){
+		output += String.fromCharCode.apply( null, new Uint8Array( buf, 0, n ) );
+	};
+
+	return output.split( '\n' ).filter( e => e != '' );
+}
 
 function readFile( name, mode = '' ) {
 	let f = std.open( name, `r${ mode }` );
@@ -12,61 +23,41 @@ function readFile( name, mode = '' ) {
 	}
 
 	let totalLen = 0;
-	const chunks = [];  // array of Uint8Array
+	const chunks = [];
 
 	while ( true ) {
 		let buf = new Uint8Array( 64 * 1024 );
 		let len = f.read( buf.buffer, 0, buf.length );
 		if ( len <= 0 ) break;
-		chunks.push( buf.subarray( 0, len ) );  // keep raw bytes
+		chunks.push( buf.subarray( 0, len ) );
 		totalLen += len;
 	}
 	f.close();
-
-	// Join into final Uint8Array
 	let result = new Uint8Array( totalLen );
 	let offset = 0;
 	for ( let chunk of chunks ) {
 		result.set( chunk, offset );
 		offset += chunk.length;
 	}
-
 	return result;
 }
 
 const paths = {};
-const [ files, err ] = os.readdir( './files' );
-if( err ){
-	console.error( `Reading ./files error ${ -err }` );
-	std.exit( 1 );
-} else {
-	files.filter( file => file !== '.' && file !== '..' ).forEach( file => {
-		const ext = file.split( '.' ).pop();
-		switch( ext ){
-			case 'ico':
-			case 'png':
-				paths[ `/${ file }` ] = {
-					body: toBase64( readFile( `./files/${ file }`, 'b' ) ),
-					type: `image/${ ext }`
-				};
-				break;
+for( let file of pipe( 'find files -type f' ) ){
+	const httpPath = file.replace( 'files', '' );
+	const ext = file.split( '.' ).pop();
+	const types = {
+		ico: 'image/ico',
+		png: 'image/png',
+		html: 'text/html;charset=utf-8',
+		js: 'text/javascript',
+		mjs: 'text/javascript'
+	};
 
-			case 'html':
-				paths[ `/${ file }` ] = {
-					body: readFile( `./files/${ file }` ),
-					type: 'text/html;charset=utf-8'
-				};
-				break;
-
-			case 'js':
-			case 'mjs':
-				paths[ `/${ file }` ] = {
-					body: readFile( `./files/${ file }` ),
-					type: 'text/javascript'
-				};
-				break;
-		}
-	} );
+	paths[ httpPath ] = {
+		body: types[ ext ].includes( 'image' ) ? toBase64( readFile( file, 'b' ) ) : readFile( file ),
+		type: types[ ext]
+	};
 }
 
 let f = std.open( './httpPaths.mjs', 'w' );

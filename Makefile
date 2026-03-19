@@ -56,7 +56,9 @@ server: server.o socket.o
 bundleFiles: bundleFiles.mjs abConversions.mjs
 	$(QJSC) -o bundleFiles bundleFiles.mjs abConversions.mjs
 
-HTTP_PATHS_FILES := $(wildcard files/*)
+HTTP_PATHS_FILES := $(shell find files -type f) #$(wildcard files/*)
+print-http:
+	@echo $(HTTP_PATHS_FILES)
 
 httpPaths.mjs: $(HTTP_PATHS_FILES) bundleFiles
 	./bundleFiles $(HTTP_PATHS_FILES)
