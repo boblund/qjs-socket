@@ -35,7 +35,7 @@ function parseRequest( data ) {
 
 const READBUF_CHUNK_SIZE = 4096;
 
-function socketWrite( fd, status, statusText, contentType, body ){
+function httpRespWrite( fd, status, statusText, contentType, body ){
 	// chunked transfer is always used, whether it's needed or not
 	const CHUNKSIZE = 128 * 1024;
 	const headers = stringToAb(
@@ -75,9 +75,9 @@ function httpServerApp( client_fd ){
 		const path = req.path === '/' ? '/index.html' : pathNames.includes( req.path ) ? req.path : '';
 		console.log( 'request:', req.path );
 		if( path !== '' ){
-			socketWrite( client_fd, 200, "OK", paths[ path ].type, paths[ path ].body );
+			httpRespWrite( client_fd, 200, "OK", paths[ path ].type, paths[ path ].body );
 		} else {
-			socketWrite( client_fd, 404, 'Not Found', {}, `404 ${ path.req } not Found\n` );
+			httpRespWrite( client_fd, 404, 'Not Found', {}, `404 ${ path.req } not Found\n` );
 		}
 	} else {
 		console.log( `client disconnected on fd ${ client_fd }` );
