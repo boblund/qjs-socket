@@ -17,7 +17,11 @@ os.signal( os.SIGINT, () => {
 	std.exit( 0 );
 } );
 
-let port = 12345;
+if( scriptArgs.length != 2 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } port` );
+	std.exit( 1 );
+}
+const [ port ] = scriptArgs.slice( 1 );
 
 const server = createServer( ( socket ) => {
 	socket.on( 'data', readBuf => {
@@ -25,7 +29,6 @@ const server = createServer( ( socket ) => {
 		console.log( `client msg: ${ msg }` );
 		let ab = stringToAb( 'clientServer reply: ' + msg );
 		socket.write( ab );
-		//readBuf.fill( 0 );
 	} );
 } );
 

@@ -11,7 +11,11 @@ function stringToAb( str ) {
 	return buf;
 }
 
-const name = scriptArgs.length == 2 ? scriptArgs[ 1 ] : 'unkown';
+if( scriptArgs.length < 3 || scriptArgs.length > 4 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } name port [ip]` );
+	std.exit( 1 );
+}
+const [ name, port, ip = '127.0.0.1' ] = scriptArgs.slice( 1 );
 let cnt = 1;
 
 const client = createConnection();
@@ -33,7 +37,7 @@ client.on( 'error', e => {
 	std.exit( e );
 } );
 
-client.connect( 12345, '127.0.0.1', () => {
+client.connect( { port, ip }, () => {
 	let ab = stringToAb( `client send ${ cnt++ } ${ name }` );
 	client.write( ab );
 } );
