@@ -52,7 +52,6 @@ server.o: server.c
 server: server.o socket.o
 	$(CC) $(LDFLAGS) -o server server.o socket.o
 
-# httpServer
 bundleFiles: bundleFiles.mjs abConversions.mjs
 	$(QJSC) -o bundleFiles bundleFiles.mjs abConversions.mjs
 
@@ -63,6 +62,7 @@ print-http:
 httpPaths.mjs: $(HTTP_PATHS_FILES) bundleFiles
 	./bundleFiles $(HTTP_PATHS_FILES)
 
+# httpServer
 httpServer.c: httpServer.js httpPaths.mjs abConversions.mjs
 	$(QJSC) -e -M socket.so,socket -o httpServer.c httpServer.js httpPaths.mjs abConversions.mjs
 
@@ -72,7 +72,27 @@ httpServer.o: httpServer.c
 httpServer: httpServer.o socket.o
 	$(CC) $(LDFLAGS) -o httpServer httpServer.o socket.o
 
+# net-httpServer
+net-httpServer.c: net-httpServer.js httpPaths.mjs abConversions.mjs WebSocketServer.mjs sha1.mjs
+	$(QJSC) -e -M socket.so,socket -o net-httpServer.c net-httpServer.js httpPaths.mjs abConversions.mjs  WebSocketServer.mjs sha1.mjs
+
+net-httpServer.o: net-httpServer.c
+	$(CC) $(CFLAGS) -c net-httpServer.c -o net-httpServer.o
+
+net-httpServer: net-httpServer.o socket.o
+	$(CC) $(LDFLAGS) -o net-httpServer net-httpServer.o socket.o
+
+# wsHttpServer
+wsHttpServer.c: wsHttpServer.js httpPaths.mjs abConversions.mjs http.mjs ws.mjs sha1.mjs net.mjs
+	$(QJSC) -e -M socket.so,socket -o wsHttpServer.c wsHttpServer.js httpPaths.mjs abConversions.mjs  http.mjs ws.mjs sha1.mjs net.mjs
+
+wsHttpServer.o: wsHttpServer.c
+	$(CC) $(CFLAGS) -c wsHttpServer.c -o wsHttpServer.o
+
+wsHttpServer: wsHttpServer.o socket.o
+	$(CC) $(LDFLAGS) -o wsHttpServer wsHttpServer.o socket.o
+
 .PHONY: clean
 
 clean:
-	rm -f *.o net-*.c client.c server.c httpServer.c
+	rm -f *.o net-*.c client.c server.c httpServer.c wsHttpServer.c
