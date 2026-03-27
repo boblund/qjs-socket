@@ -1,6 +1,6 @@
 import * as os from 'os';
+import * as std from 'std';
 import { Client } from 'socket.so';
-import { MsgQ } from './MsgQ.mjs';
 
 function stringToAb( str ) {
 	const buf = new ArrayBuffer( str.length );
@@ -11,40 +11,32 @@ function stringToAb( str ) {
 	return buf;
 }
 
-// alternative for < 100KB String.fromCharCode( ...new Uint8Array( buf ) )
+let cnt = 1;
+async function clientApp( fd ){
+	if( cnt == 5 ){
+		os.close( fd );
+		os.setReadHandler( fd, null );
+		console.log( 'done' );
+		return;
+	}
+
+	const readBuf = new Uint8Array( CHUNK_SIZE );
+	const bytesRead = os.read( fd, readBuf.buffer, 0, readBuf.length );
+	console.log( String.fromCharCode( ...new Uint8Array( readBuf.slice( 0, bytesRead ) ) ) );
+	await new Promise( res => os.setTimeout( res, 5000 ) );
+	let ab = stringToAb( `client send ${ ++cnt } ${ name }` );
+	os.write( fd, ab, 0, ab.byteLength );
+}
 
 const CHUNK_SIZE = 4096;
-const name = scriptArgs.length == 2 ? scriptArgs[ 1 ] : 'unkown';
+if( scriptArgs.length < 3 || scriptArgs.length > 4 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } name port [ip]` );
+	std.exit( 1 );
+}
+const [ name, port, ip = '127.0.0.1' ] = scriptArgs.slice( 1 );
 const client = new Client();
 
-let fd = client.connect( { ip: '192.168.0.30', port: 12345 } );
-let readBuf = new Uint8Array( CHUNK_SIZE );
-let cnt = 1;
-
-const msgQ = new MsgQ;
-
-os.setReadHandler( fd, () => {
-	const bytesRead = os.read( fd, readBuf.buffer, 0, readBuf.length );
-	if ( bytesRead > 0 ){
-		msgQ.add( readBuf.buffer.slice( 0, bytesRead ) );
-		readBuf.fill( 0 );
-	} else {
-		os.setReadHandler( fd, null );
-		msgQ.closed = true;
-	}
-} );
-
-let msg;
-while( cnt < 5 ){
-	let ab = stringToAb( `client send ${ cnt } ${ name }` );
-	os.write( fd, ab, 0, ab.byteLength );
-	if( ( msg = await msgQ.get() ) === null ) break;
-	console.log( `msgQ.get: ${ 	String.fromCharCode( ...new Uint8Array( msg ) ) }` );
-	await new Promise( res => os.setTimeout( res, 10000 ) );
-	cnt++;
-}
-os.setReadHandler( fd, null );
-msgQ.closed = true;
-os.close( fd );
-
-console.log( 'done' );
+let fd = client.connect( { ip, port } );
+os.setReadHandler( fd, () => { clientApp( fd ); } );
+let ab = stringToAb( `client send ${ cnt } ${ name }` );
+os.write( fd, ab, 0, ab.byteLength );
