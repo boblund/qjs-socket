@@ -79,6 +79,13 @@ static JSValue js_client_get_fd(JSContext *ctx, JSValueConst this_val, int magic
     return JS_NewInt32(ctx, s->socket_fd );
 }
 
+static JSValue js_client_end(JSContext *ctx, JSValueConst this_val,int argc, JSValueConst *argv){
+		JSClientData *s = JS_GetOpaque2(ctx, this_val, js_client_class_id);
+    if (!s) return JS_EXCEPTION;
+		shutdown(s->socket_fd, SHUT_WR);
+		return JS_UNDEFINED;
+}
+
 static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -136,6 +143,7 @@ static JSClassDef js_client_class = {
 
 static const JSCFunctionListEntry js_client_proto_funcs[] = {
     JS_CFUNC_DEF("connect", 0, js_client_connect),
+		JS_CFUNC_DEF("end", 0, js_client_end),
 		JS_CGETSET_MAGIC_DEF("fd", js_client_get_fd, NULL, 0),
 };
 
@@ -189,6 +197,18 @@ static JSValue js_server_ctor(JSContext *ctx,
     js_free(ctx, s);
     JS_FreeValue(ctx, obj);
     return JS_EXCEPTION;
+}
+
+static JSValue js_server_end(JSContext *ctx, JSValueConst this_val,int argc, JSValueConst *argv){
+		int fd;
+		JS_ToInt32(ctx, &fd, argv[0]);
+		JSServerData *s = JS_GetOpaque2(ctx, this_val, js_server_class_id);
+    if (!s){
+			printf("ERROR: server opaque NULL\n");
+			return JS_EXCEPTION;
+		}
+		shutdown(fd, SHUT_WR);
+		return JS_UNDEFINED;
 }
 
 static JSValue js_server_get_fd(JSContext *ctx, JSValueConst this_val, int magic) {
@@ -297,6 +317,7 @@ static JSClassDef js_server_class = {
 
 static const JSCFunctionListEntry js_server_proto_funcs[] = {
     JS_CFUNC_DEF("listen", 0, js_server_listen),
+		JS_CFUNC_DEF("end", 0, js_server_end),
 		JS_CGETSET_MAGIC_DEF("fd", js_server_get_fd, NULL, 0),
 };
 
