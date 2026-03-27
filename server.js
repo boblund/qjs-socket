@@ -7,7 +7,11 @@ os.signal( os.SIGINT, () => {
 	std.exit( 0 );
 } );
 
-let port = 12345;
+if( scriptArgs.length != 2 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } port` );
+	std.exit( 1 );
+}
+const port = scriptArgs[ 1 ];
 const server = new Server;
 const { stop, pipe_fd } = server.listen( port );
 console.log( `Socket server started on port: ${ port }` );
