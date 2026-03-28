@@ -26,6 +26,7 @@ Object.keys( paths ).forEach( path => {
 
 const pathNames = Object.keys( paths );
 const CHUNKSIZE = 128 * 1024;
+const MAX_BODY_LENGTH = 200 * 1000; // chromium limit for JS
 
 const server = http.createServer( ( req, resp ) => {
 	const path = req.path === '/' ? '/index.html' : pathNames.includes( req.path ) ? req.path : '';
@@ -35,18 +36,27 @@ const server = http.createServer( ( req, resp ) => {
 		resp.statusMessage = 'OK';
 		resp.setHeader( 'Content-Type', paths[ path ].type );
 		resp.setHeader( 'Connection', 'keep-alive' );
-		resp.setHeader( 'Transfer-Encoding', 'chunked' );
 
 		const body = paths[ path ].body;
 		const bodyLength = body instanceof Uint8Array ? body.byteLength : body.length;
-		for( let pos = 0; pos < bodyLength; ) {
-			const chunkLen = ( pos + CHUNKSIZE < bodyLength ) ? CHUNKSIZE : ( bodyLength - pos );
-			const chunk = body instanceof ArrayBuffer || body instanceof Uint8Array
-				? body.slice( pos, pos + chunkLen ).buffer
-				: stringToAb( body.slice( pos, pos + chunkLen ) );
 
-			resp.write( chunk );
-			pos += chunkLen;
+		if( bodyLength <= MAX_BODY_LENGTH ){
+			resp.setHeader( 'Content-Length', bodyLength );
+			resp.write( body instanceof ArrayBuffer || body instanceof Uint8Array
+				? body.buffer
+				: stringToAb( body )
+			);
+		} else {
+			resp.setHeader( 'Transfer-Encoding', 'chunked' );
+			for( let pos = 0; pos < bodyLength; ) {
+				const chunkLen = ( pos + CHUNKSIZE < bodyLength ) ? CHUNKSIZE : ( bodyLength - pos );
+				const chunk = body instanceof ArrayBuffer || body instanceof Uint8Array
+					? body.slice( pos, pos + chunkLen ).buffer
+					: stringToAb( body.slice( pos, pos + chunkLen ) );
+
+				resp.write( chunk );
+				pos += chunkLen;
+			}
 		}
 		resp.end();
 

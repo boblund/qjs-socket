@@ -21,28 +21,37 @@ function parseRequest( data ) {
 class Response{
 	#socket;
 	#headers = [];
+	#chunked = false;
 
 	constructor( socket ){ this.#socket = socket; }
 	end( aBuf = undefined ){
-		if( aBuf ){
-			this.write( aBuf );
+		if( aBuf ){ this.write( aBuf ); }
+		if( this.#chunked ){
+			this.#socket.write( stringToAb( '0\r\n\r\n' ) );
+		}else{
+			//this.#socket.end();
 		}
-		this.#socket.write( stringToAb( '0\r\n\r\n' ) );
 	}
 
-	setHeader( key, value ){ this.#headers.push( `${ key }: ${ value }` ); }
+	setHeader( key, value ){
+		this.#chunked = key == 'Transfer-Encoding';
+		this.#headers.push( `${ key }: ${ value }` );
+	}
 
 	write( aBuf ){
-		const chunked = this.#headers.indexOf( 'Transfer-Encoding: chunked' ) != -1;
 		if( this.#headers.length > 0 ){
 			this.#headers.unshift( `HTTP/1.1 ${ this.statusCode } ${ this.statusMessage }` );
 			this.#socket.write( stringToAb( this.#headers.join( '\r\n' ) + '\r\n\r\n' ) );
 			this.#headers = [];
 		}
 
-		this.#socket.write( stringToAb( `${ aBuf.byteLength.toString( 16 ) }\r\n` ) );
-		this.#socket.write( aBuf );
-		this.#socket.write( stringToAb( '\r\n' ) );
+		if( this.#chunked ){
+			this.#socket.write( stringToAb( `${ aBuf.byteLength.toString( 16 ) }\r\n` ) );
+			this.#socket.write( aBuf );
+			this.#socket.write( stringToAb( '\r\n' ) );
+		}else{
+			this.#socket.write( aBuf );
+		}
 	}
 }
 
