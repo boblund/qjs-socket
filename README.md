@@ -13,7 +13,7 @@ Later, a client creates an instance of the Client class and calls the connect me
 
 At this point, client and server JS send data using os.write(fd, ...) and receive data in their respective readHandlers. client.js and server.js provide an example of these steps.
 
-The motivation for qjs-socket was to embed an HTTP server in a quickjs application to provide a local UI with the minimal amout of code; the included HTTP example (that embeds favicon.ico, index.htmland index.js) is a 1 MB executable file. A design goal was to do the minimum required for client and server sockets in the C module, keeping the bulk of application and UI development in JS, HTML and CSS.
+The motivation for qjs-socket was to embed an HTTP/WS server in a quickjs application to provide a local UI with the minimal amout of code; [qjs-wsHttpServer](www.gitbub.com/boblund/qjs-wsHttpServer.git) is an example (that embeds favicon.ico, index.html and index.js) is a 1 MB executable file. A design goal was to do the minimum required for client and server sockets in the C module, keeping the bulk of application and UI development in JS, HTML and CSS.
 
 # API
 ## socket.so
@@ -23,42 +23,31 @@ import{ Client, Server } from 'socket.so'
 ```
 ### Client
 #### Constructor
-```
 const client = new Client;
-```
+
 #### Methods
 connect( { ip, port } ) -  Connect to server.
 - ip: server host ip address
 - port: server host port
 - Returns: file descriptor for server socket
-```
+
 const fd = client.connect( { ip, port } )
-```
 fd
 - Returns: the socket file descriptor
-```
-const fd = client.fd
-```
 
 ### Server
 #### Constructor
-```
 const server = new Server( );
-```
+
 #### Methods
 server.listen( port ) - Listen for client connects.
 - port: port to listen on for connects
 - Returns:
 	- stop: function to end thread listening for connects
 	- pipe_fd: file descriptor to receive client socket file descriptor
-```
-const { stop, pipe_fd } = server.listen( port )
-```
+
 fd
 - Returns: the socket file descriptor
-```
-const fd = server.fd
-```
 
 ## net.mjs
 Wrapper for socket.so that emulates a subset of the node.js 'net' module API. To use:
@@ -66,12 +55,9 @@ Wrapper for socket.so that emulates a subset of the node.js 'net' module API. To
 import{ createConnection, createServer } from 'net.mjs'
 ```
 ### createConnection
-createConnection( func ) - A factory function that creates an instance of a client TCP socket.
+const client = createConnection( func ) - A factory function that creates an instance of a client TCP socket.
 - func: function to call on ClientSocket 'connect' event
 - Returns: ClientSocket
-```
-const client = createConnection( func );
-```
 
 ### ClientSocket
 Emulates a subset of the nodejs client net.Socket.
@@ -82,31 +68,31 @@ Emulates a subset of the nodejs client net.Socket.
 - error: Emitted when an error occurs. The argument is the C errno.
 
 #### Methods
-```client.connect{ port, ip }, func )``` Connect to server.
+client.connect( { port, ip }, func ) - Connect to server.
 - ip: server host ip address
 - port: server host port
 - func: functiob to call on 'connect' event
 - Returns: undefined
 
-```client.end( aBuf )``` Send FIN to server indicating nothing more will be written.
+client.end( aBuf ) - Send FIN to server indicating nothing more will be written.
 - aBuf: optional ArrayBuffer to be written before the FIN packaet.
 - Returns: undefined
 
-```client.destroy()``` Destroy the client.
+client.destroy() - Destroy the client.
 - Returns: undefined
 
-```client.on( event, func )``` Register a callback for event.
+client.on( event, func ) - Register a callback for event.
 - event: Event name 'data' | 'close' | 'connect' | 'error'
 - func: function to call on event
 - Returns: undefined
 
 ### createServer
-```const server = createServer( func );``` A factory function that creates an instance of a TCP Server.
+const server = createServer( func ) - A factory function that creates an instance of a TCP Server.
 - func: function to call on a new connection.
 - Returns: TCP Server instance
 
 #### Methods
-```server.listen( port )``` Listen for client connections.
+server.listen( port ) - Listen for client connections.
 - port: port to listen on for connection requests
 - Returns: undefined
 
@@ -119,17 +105,17 @@ Emulates a subset of the nodejs server net.Socket.
 - error: Emitted when an error occurs. The argument is the C errno.
 
 #### Methods
-```on( event, func )``` Register a callback for event.
+on( event, func ) - Register a callback for event.
 - event: Event name 'data' | 'close' | 'error'
 - func: function to call on event
 - Returns: undefined
 
-```removeEventListener( event, func )``` Remove a callback for event.
+removeEventListener( event, func ) - Remove a callback for event.
 - event: Event name 'data' | 'close' | 'error'
 - func: function to call on event
 - Returns: undefined
 
-```write( aBuf )``` Write to the socket.
+write( aBuf ) - Write to the socket.
 - aBuf: an ArrayBuffer
 - Returns: undefined
 
@@ -161,42 +147,6 @@ then, in separate terminal windows
 ```
 ./net-client <client-name>, port
 ./net-server port
-```
-
-## httpServer
-Single file http server bundled with HTTP delivered files. As quickjs does not provide an embedded file system, files to be served are put ( by bundleFiles ) into an es6 module ( httpPaths.mjs) that is statically liked with the HTTP server.
-
-
-### bundeFiles
-bundleFiles finds all files, recursively, in the 'files' directory and builds a object:
-```
-paths = {
-	httpPath: {
-		body:
-		type:
-	}
-	.
-	.
-	.
-}
-```
-- httpPath: url path name component
-- body: content to be returned
-- type: body content-type
-
-The es6 module 'httpPaths.mjs' exporting ```paths``` is then created.
-
-### httpPaths.mjs
-This module has the following format:
-```
-export { paths };
-const paths = { ... };
-```
-
-### httpServer.js
-A simple, multi-threaded HTTP server. It imports ```paths``` from httpPaths.mjs and delivers content according to requests. ```make httpServer``` will create the executable 'httpServer' that includes the server and associated content files. To run:
-```
-./httpServer port
 ```
 
 # License

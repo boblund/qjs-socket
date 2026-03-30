@@ -1,15 +1,7 @@
 import * as os from 'os';
 import * as std from 'std';
 import { Client } from 'socket.so';
-
-function stringToAb( str ) {
-	const buf = new ArrayBuffer( str.length );
-	const bytes = new Uint8Array( buf );
-	for ( let i = 0; i < str.length; i++ ) {
-		bytes[i] = str.charCodeAt( i ) & 0xFF;
-	}
-	return buf;
-}
+import { strToUint8 } from './strToUint8.mjs';
 
 let cnt = 1;
 async function clientApp( fd ){
@@ -24,7 +16,7 @@ async function clientApp( fd ){
 	const bytesRead = os.read( fd, readBuf.buffer, 0, readBuf.length );
 	console.log( String.fromCharCode( ...new Uint8Array( readBuf.slice( 0, bytesRead ) ) ) );
 	await new Promise( res => os.setTimeout( res, 5000 ) );
-	let ab = stringToAb( `client send ${ ++cnt } ${ name }` );
+	let ab = strToUint8( `client send ${ ++cnt } ${ name }` ).buffer;
 	os.write( fd, ab, 0, ab.byteLength );
 }
 
@@ -38,5 +30,5 @@ const client = new Client();
 
 let fd = client.connect( { ip, port } );
 os.setReadHandler( fd, () => { clientApp( fd ); } );
-let ab = stringToAb( `client send ${ cnt } ${ name }` );
+let ab = strToUint8( `client send ${ cnt } ${ name }` ).buffer;
 os.write( fd, ab, 0, ab.byteLength );
