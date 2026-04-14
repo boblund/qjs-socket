@@ -25,7 +25,7 @@
 
 typedef struct {
 		int socket_fd;
-		JSContext *ctx;
+		//JSContext *ctx;
 } JSClientData;
 
 static JSClassID js_client_class_id;
@@ -57,7 +57,7 @@ static JSValue js_client_ctor(JSContext *ctx,
     /* using new_target to get the prototype is necessary when the
        class is extended. */
 
-		s->ctx = ctx;
+		//s->ctx = ctx;
     proto = JS_GetPropertyStr(ctx, new_target, "prototype");
     if (JS_IsException(proto))
         goto fail;
@@ -153,7 +153,7 @@ static const JSCFunctionListEntry js_client_proto_funcs[] = {
 
 typedef struct {
 		int socket_fd;
-		JSContext *ctx;
+		//JSContext *ctx;
 } JSServerData;
 
 static JSClassID js_server_class_id;
@@ -168,7 +168,7 @@ static void js_server_finalizer(JSRuntime *rt, JSValue val)
 			s->socket_fd = -1;
 		}
 
-		s->ctx = NULL;
+		//s->ctx = NULL;
 		js_free_rt(rt, s);
 }
 
@@ -182,7 +182,7 @@ static JSValue js_server_ctor(JSContext *ctx,
 
     s = js_mallocz(ctx, sizeof(JSServerData));
     if (!s) return JS_EXCEPTION;
-		s->ctx = ctx;
+		//s->ctx = ctx;
 
 		proto = JS_GetPropertyStr(ctx, new_target, "prototype");
     if (JS_IsException(proto)) goto fail;
@@ -260,8 +260,8 @@ JSValue js_stop_listen(JSContext *ctx, JSValueConst this_val, int argc, JSValueC
 static JSValue js_server_listen(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
-    JSServerData *s = JS_GetOpaque2(ctx, this_val, js_server_class_id);
-    if (!s) return JS_EXCEPTION;
+    //JSServerData *s = JS_GetOpaque2(ctx, this_val, js_server_class_id);
+    //if (!s) return JS_EXCEPTION;
 		int port;
 		JS_ToInt32(ctx, &port, argv[0]);
 		int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
