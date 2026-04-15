@@ -2,22 +2,13 @@
 
 ## Overview
 
-qjs-socket implements a TCP socket api for quickjs.
+qjs-socket implements a TCP/TLS socket api for quickjs. socket.c implements a C module that exports a Client and Server class that implement the TCP socket and TLS functionality. JavaScript imports this module and provides all other application logic, e.g. reading/writing, the socket, HTTP/S or ws/s.
 
-<img style="display: block; margin: auto;" src="./architecture.drawio.png">
-<p style="text-align: center;">socket architecture</p>
-
-A socket server starts with JavaScript (JS) creating an instance of the Server class exposed by the C module and calling its listen method (1). The C module creates a pipe. The pipe's write end is passed to a thread that loops waiting for client requests and the pipe's read end is returned to JS and used in os.setReadHandler (2).
-
-Later, a client creates an instance of the Client class and calls the connect method (3). Which C module makes the request (4) and returns the client connection file descriptor (FD) to JS (5). The server accepts the request and sends the server connection FD to JS (5) where it is used in a os.setReadHanler (6).
-
-At this point, client and server JS send data using os.write(fd, ...) and receive data in their respective readHandlers. client.js and server.js provide an example of these steps.
-
-The motivation for qjs-socket was to embed an HTTP/WS server in a quickjs application to provide a local UI with the minimal amout of code; [qjs-wsHttpServer](www.gitbub.com/boblund/qjs-wsHttpServer.git) is an example (that embeds favicon.ico, index.html and index.js) is a 1 MB executable file. A design goal was to do the minimum required for client and server sockets in the C module, keeping the bulk of application and UI development in JS, HTML and CSS.
+The motivation for qjs-socket was to embed an HTTP/WS server in a quickjs application to provide a local UI with the minimal amout of code; [qjs-wsHttpServer](www.gitbub.com/boblund/qjs-wsHttpServer.git) is an example (that embeds favicon.ico, index.html and index.js) in a 1 MB executable file. A design goal was to do the minimum required for client and server sockets and TLS in the C module, keeping the bulk of application and UI development in JS, HTML and CSS.
 
 # API
-## socket.so
-A quickjs C module exporting Client and Server classes for creating TCP sockets. These sockets are exposed as quickjs file descriptors that can be read and written to. To use:
+## socket.c
+A quickjs C module exporting Client and Server classes for creating TCP sockets that may optionlly use TLS encryption.
 ```
 import{ Client, Server } from 'socket.so'
 ```
@@ -26,37 +17,46 @@ import{ Client, Server } from 'socket.so'
 const client = new Client;
 
 #### Methods
-connect( { ip, port } ) -  Connect to server.
+const fds = connect( { ip, port \[, tls \] } ) -  Connect to server.
 - ip: server host ip address
 - port: server host port
-- Returns: file descriptor for server socket
+- tls: if true, use tls, if missing or false unencrypted
+- Returns: an array with the server's read and write socket fds \[read_fd, write_fd\].
 
-const fd = client.connect( { ip, port } )
-fd
-- Returns: the socket file descriptor
+The quickjs client application will use os.setReadHandler() with the socket's fds\[0\] to asychronously wait for server socket data.
+
+client.js provides an example of a socket client.
 
 ### Server
 #### Constructor
 const server = new Server( );
 
 #### Methods
-server.listen( port ) - Listen for client connects.
+server.listen( { port \[, key, cert\]} ) - Listen for client connects.
 - port: port to listen on for connects
+- key, cert: if specified, they will be used for TLS, otherwise the socket will not use encrytpion
 - Returns:
 	- stop: function to end thread listening for connects
-	- pipe_fd: file descriptor to receive client socket file descriptor
+	- pipe_fd: pipe file descriptor to receive a client's socket fds \[read_fd, write_fd\].
 
-fd
-- Returns: the socket file descriptor
+The quickjs server application will use  os.setReadHandler() with the pipe_fd to asychronously wait for client socket fds when a client makes a connection request. os.setReadHandler is then used with the socket's fds\[0\] to asychronously wait for client socket data.
+
+server.js provides an example of a multi-threaded socket server.
+
+## TLS Credentials
+Using TLS requires a server private key and certificate named key.pem and cert.pem, respectively. A self-signed cert and key can be made using [mkcert](https://github.com/filosottile/mkcert). If a browser is used as a client use
+```
+mkcert --install
+```
+to add the certificate to your system's trust store.
 
 ## net.mjs
-Wrapper for socket.so that emulates a subset of the node.js 'net' module API. To use:
+Wrapper for socket.so that emulates a subset of the node.js 'net' module API. It differs in that it also supports TLS sockets. To use:
 ```
 import{ createConnection, createServer } from 'net.mjs'
 ```
 ### createConnection
-const client = createConnection( func ) - A factory function that creates an instance of a client TCP socket.
-- func: function to call on ClientSocket 'connect' event
+const client = createConnection() - A factory function that creates an instance of a client socket.
 - Returns: ClientSocket
 
 ### ClientSocket
@@ -68,10 +68,11 @@ Emulates a subset of the nodejs client net.Socket.
 - error: Emitted when an error occurs. The argument is the C errno.
 
 #### Methods
-client.connect( { port, ip }, func ) - Connect to server.
+client.connect( { port, ip \[, tls\] }, func ) - Connect to server.
 - ip: server host ip address
 - port: server host port
-- func: functiob to call on 'connect' event
+- tls: true to use TLS, false or absent otherwise
+- func: function to call on 'connect' event
 - Returns: undefined
 
 client.end( aBuf ) - Send FIN to server indicating nothing more will be written.
@@ -82,18 +83,25 @@ client.destroy() - Destroy the client.
 - Returns: undefined
 
 client.on( event, func ) - Register a callback for event.
-- event: Event name 'data' | 'close' | 'connect' | 'error'
+- event: event name 'data' | 'close' | 'connect' | 'error'
 - func: function to call on event
 - Returns: undefined
 
+client.write( arrayBuff )
+- arrayBuff: ArrayBuffer of data to be written
+- Returns: undefined
+
+net-client.js provides an example of a client that uses net.mjs.
+
 ### createServer
-const server = createServer( func ) - A factory function that creates an instance of a TCP Server.
-- func: function to call on a new connection.
-- Returns: TCP Server instance
+const server = createServer( func ) - A factory function that creates an instance of a socket server.
+- func: function with ServerSocket parameter to call on a new connection.
+- Returns: socket server instance
 
 #### Methods
-server.listen( port ) - Listen for client connections.
+server.listen( \{ port \[, key, cert\} \] ) - Listen for client connections.
 - port: port to listen on for connection requests
+- key, cert: if specified, they will be used for TLS, otherwise the socket will not use encrytpion
 - Returns: undefined
 
 ### ServerSocket
@@ -105,12 +113,10 @@ Emulates a subset of the nodejs server net.Socket.
 - error: Emitted when an error occurs. The argument is the C errno.
 
 #### Methods
-on( event, func ) - Register a callback for event.
-- event: Event name 'data' | 'close' | 'error'
-- func: function to call on event
+end() - Send FIN to server indicating nothing more will be written.
 - Returns: undefined
 
-removeEventListener( event, func ) - Remove a callback for event.
+on( event, func ) - Register a callback for event.
 - event: Event name 'data' | 'close' | 'error'
 - func: function to call on event
 - Returns: undefined
@@ -119,8 +125,10 @@ write( aBuf ) - Write to the socket.
 - aBuf: an ArrayBuffer
 - Returns: undefined
 
+net-server.js provides an example of a server that uses net.mjs.
+
 # Using
-qjs-socket was designed for and tested in QuickJS Compiler version 2025-09-13. The intended applications are compiled, standalone applications that need to communicate over TCP sockets. The 'make' command is used for building the following targets: client, server, net-client, net-server, httpServer and a dynamically loaded socket.so. There is no make all target.
+qjs-socket was designed for and tested in QuickJS Compiler version 2025-09-13. The intended applications are compiled, standalone applications that need to communicate over sockets. The 'make' command is used for building the following targets: client, server, net-client, net-server and a dynamically loaded socket.so. There is no make all target.
 
 ## client/server
 Simple TCP socket client and server that use a statically linked socket.so. Modify 'Makefile' to use the installed 'gcc' and quickjs 'qjsc' commands, then:
@@ -132,7 +140,7 @@ make client server
 then, in separate terminal windows
 
 ```
-./client <client-name>, port
+./client port
 ./server port
 ```
 
@@ -148,6 +156,24 @@ then, in separate terminal windows
 ./net-client <client-name>, port
 ./net-server port
 ```
+## socket.so
+The above make targets statically link socket.c into the executable. If there is a need to dynamically load socket.c, e.g. when running the app in qjs, a dynamically linked library can be created.
+```
+make socket.so
+```
+
+# Architecure
+
+<img style="display: block; margin: auto;" src="./architecture.drawio.png">
+<p style="text-align: center;">socket architecture</p>
+
+A socket server starts with JavaScript (JS) creating an instance of Server and calling its listen method. The C module creates a pipe whose write end is passed to an accept thread that loops waiting for client requests and the pipe's read end is returned to JS and used in os.setReadHandler.
+
+Later, a client app creates an instance of Client and calls the connect method. If the connection uses TLS, the connect method creates a pair of read/write pipes. One set of pipe ends are passed to a client TLS thread that makes the request. Otherwise, the main C thread makes the request.  Then read/write fds are returned to JS, either for the server \(no TLS\) or the read/write pipes for the TLS thread.
+
+The accept thread in the server accepts the request. If the connection uses TLS, the accept thread creates a pair of read/write pipes. One set of pipe ends are passed to a server TLS thread that accepts the request. Then read/write fds are sent to JS over the accept thread pipe, either for the client \(no TLS\) or the read/write pipe for the server TLS thread.
+
+At this point, client and server JS applications are connected either by a socket \( no TLS \) or a pair of pipes \( TLS \) and send data using os.write(fd, ...) and receive data in their respective readHandlers.
 
 # License
 
