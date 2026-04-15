@@ -23,7 +23,7 @@ if( scriptArgs.length != 2 ){
 }
 const [ port ] = scriptArgs.slice( 1 );
 
-const server = await createServer( ( socket ) => {
+const server = createServer( ( socket ) => {
 	socket.on( 'data', readBuf => {
 		const msg = String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, readBuf.length ) );
 		//console.log( `server request: ${ msg }` );
