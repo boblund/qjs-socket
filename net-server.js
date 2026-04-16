@@ -17,11 +17,11 @@ os.signal( os.SIGINT, () => {
 	std.exit( 0 );
 } );
 
-if( scriptArgs.length != 2 ){
-	console.log( `Usage: ${ scriptArgs[ 0 ] } port` );
+if( scriptArgs.length > 3 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } port [tls]` );
 	std.exit( 1 );
 }
-const [ port ] = scriptArgs.slice( 1 );
+const [ port, tls = false ] = scriptArgs.slice( 1 );
 
 const server = createServer( ( socket ) => {
 	socket.on( 'data', readBuf => {
@@ -32,4 +32,8 @@ const server = createServer( ( socket ) => {
 	} );
 } );
 
-server.listen( { port, key: "key.pem", cert: "cert.pem" } );
+const args = tls
+	? { port, key: "key.pem", cert: "cert.pem" }
+	: { port };
+
+server.listen( tls ? { port, key: "key.pem", cert: "cert.pem" } : { port } );

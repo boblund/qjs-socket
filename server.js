@@ -3,13 +3,16 @@ import * as std from 'std';
 import { Server } from 'socket.so';
 import { strToUint8 } from './strToUint8.mjs';
 
-if( scriptArgs.length != 2 ){
-	console.log( `Usage: ${ scriptArgs[ 0 ] } port` );
+if( scriptArgs.length > 3 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } port [tls]` );
 	std.exit( 1 );
 }
-const port = scriptArgs[ 1 ];
-const server = new Server( { key: 'key.pem', cert: 'cert.pem' } );
-const { stop, pipe_fd } = server.listen( port );
+const [ port, tls = false ] = scriptArgs.slice( 1 );
+console.log( `tls: ${ tls  }` );
+const server = new Server();
+const { stop, pipe_fd } = tls
+	? server.listen( { port, key: 'key.pem', cert: 'cert.pem' } )
+	: server.listen( { port } );
 os.signal( os.SIGUSR1, () => {
 	stop();
 	console.log( 'server stopped' );

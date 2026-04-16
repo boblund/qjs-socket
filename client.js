@@ -12,14 +12,15 @@ function clientApp( fd ){
 }
 
 const CHUNK_SIZE = 4096;
-if( scriptArgs.length < 3 || scriptArgs.length > 4 ){
-	console.log( `Usage: ${ scriptArgs[ 0 ] } name port [ip]` );
+if( scriptArgs.length < 2 || scriptArgs.length > 4 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } port [ip [tls]]` );
 	std.exit( 1 );
 }
-const [ name, port, ip = '127.0.0.1' ] = scriptArgs.slice( 1 );
+let [ port, ip = '127.0.0.1', tls ] = scriptArgs.slice( 1 );
+tls = tls ? true : undefined;
 const client = new Client();
 
-let fds = client.connect( { ip, port, tls: true } );
+let fds = client.connect( { ip, port, tls } );
 os.setReadHandler( fds[ 0 ], () => { clientApp( fds[ 0 ] ); } );
-let ab = strToUint8( `client send ${ name }` ).buffer;
+let ab = strToUint8( `client sending data` ).buffer;
 os.write( fds[ 1 ], ab, 0, ab.byteLength );

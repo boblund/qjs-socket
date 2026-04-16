@@ -144,6 +144,12 @@ then, in separate terminal windows
 ./server port
 ```
 
+For TLS do:
+```
+./client port 127.0.0.1 tls
+./server port tls
+```
+
 ## net-client/net-server
 Simple TCP socket client and server that use net.mjs module.
 ```
@@ -153,8 +159,15 @@ make net-client net-server
 then, in separate terminal windows
 
 ```
-./net-client <client-name>, port
+./net-client port
 ./net-server port
+```
+
+
+For TLS do:
+```
+./net-client port 127.0.0.1 tls
+./net-server port tls
 ```
 ## socket.so
 The above make targets statically link socket.c into the executable. If there is a need to dynamically load socket.c, e.g. when running the app in qjs, a dynamically linked library can be created.
