@@ -2,36 +2,37 @@ import * as os from 'os';
 import { Client, Server } from 'socket.so';
 
 export function createServer( createServerCb ){
-	const server = new Server;
-	return {
-		listen( port ){
+	const server = new Server();
+	const ret = {
+		listen( { port, key, cert } ){
 			const READBUF_CHUNK_SIZE = 4096;
-			const fdBuff = new Uint8Array( 4 );
-			const { stop, pipe_fd } = server.listen( port );
+			const fdBuff = new Int32Array( 2 ); //( https ? 2 : 1 );
+			const { stop, pipe_fd } = server.listen( { port, key, cert } );
 			os.setReadHandler( pipe_fd, () => {
-				if( os.read( pipe_fd, fdBuff.buffer, 0, fdBuff.length ) > 0 ){
+				if( os.read( pipe_fd, fdBuff.buffer, 0, fdBuff.length * 4 ) > 0 ){
+					const fds = Array.from( fdBuff );
 					const socket = new class{
-						fd = undefined;
+						read_fd = fds[ 0 ];
+						write_fd = fds[ 1 ];
+						//write_fd = https ? fds[ 1 ] : fds[ 0 ];
 						listeners = {
 							data: () => {},
 							close: () => {},
 							error: () => {}
 						};
-						end(){ server.end( socket.fd ); }
+						end(){ server.end( socket.read_fd ); }
 						on( event, func ){
 							this.listeners[ event ] = func;
 							return func;
 						};
-						write( aBuf ){ os.write( this.fd, aBuf, 0, aBuf.byteLength ); }
+						write( aBuf ){ os.write( this.write_fd, aBuf, 0, aBuf.byteLength ); }
 					};
 
-					socket.fd = new DataView( fdBuff.buffer ).getInt32( 0, true );
-					console.log( `server client on fd: ${ socket.fd }` );
 					createServerCb( socket );
-					os.setReadHandler( socket.fd, () => {
+					os.setReadHandler( socket.read_fd, () => {
 						const readBuf = new Uint8Array( READBUF_CHUNK_SIZE );
 						let n;
-						if ( ( n = os.read( socket.fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
+						if ( ( n = os.read( socket.read_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
 							socket.listeners.data( readBuf.slice( 0, n ) );
 							readBuf.fill( 0 );
 							return;
@@ -39,9 +40,9 @@ export function createServer( createServerCb ){
 						n === 0
 							? socket.listeners.close()
 							: socket.listeners.error( -n );
-						os.close( socket.fd );
-						os.setReadHandler( socket.fd, null );
-						console.log( `closed server client on fd: ${ socket.fd }` );
+						os.close( socket.read_fd );
+						os.close( socket.write_fd );
+						os.setReadHandler( socket.read_fd, null );
 					} );
 				} else {
 					os.close( pipe_fd );
@@ -50,6 +51,7 @@ export function createServer( createServerCb ){
 			} );
 		}
 	};
+	return ret;
 }
 
 export function createConnection( func = undefined ){
@@ -60,24 +62,23 @@ export function createConnection( func = undefined ){
 		error: new Set
 	};
 
-	let fd, client;
+	let fds, client;
 
 	const socket = {
-		connect( { port, ip }, func = undefined ){
+		connect( { port, ip, tls }, func = undefined ){
 			if( typeof func === 'function' ) listeners[ 'connect' ].add( func );
 			const CHUNK_SIZE = 4096;
 			client = new Client();
-			fd = client.connect( { ip, port } );
-			if( fd < 0 ){
-				listeners.error.forEach( func => func( -fd ) );
+			fds = client.connect( { ip, port, tls } );
+			if( fds === undefined ){
+				listeners.error.forEach( func => func( -fds[ 0 ] ) );
 				return undefined;
 			}
-
 			listeners.connect.forEach( func => func() );
 			listeners.connect.clear();
 			let readBuf = new Uint8Array( CHUNK_SIZE );
-			os.setReadHandler( fd, () => {
-				const n = os.read( fd, readBuf.buffer, 0, readBuf.length );
+			os.setReadHandler( fds[ 0 ], () => {
+				const n = os.read( fds[ 0 ], readBuf.buffer, 0, readBuf.length );
 				if ( n > 0 ){
 					listeners.data.forEach( func => func( readBuf ) );
 					return;
@@ -85,26 +86,26 @@ export function createConnection( func = undefined ){
 				n === 0
 					? listeners.close.forEach( func => func() )
 					: listeners.error.forEach( func => func( -n ) );
-				os.close( fd );
-				os.setReadHandler( fd, null );
+				os.close( fds[ 0 ] );
+				os.setReadHandler( fds[ 0 ], null );
 				client = undefined;
 			} );
 		},
 
 		end( aBuf = undefined ){
-			if( aBuf ) os.write( fd, aBuf, 0, aBuf.byteLength );
+			if( aBuf ) os.write( fds[ 0 ], aBuf, 0, aBuf.byteLength );
 			client.end();
 		},
 
 		destroy(){
 			client = undefined;
-			os.close( fd );
-			os.setReadHandler( fd, null );
+			os.close( fds[ 0 ] );
+			os.setReadHandler( fds[ 0 ], null );
 		},
 
 		on( event, func ){ listeners[ event ].add( func ); },
 		removeEventListener( event, func ){ listeners[ event ].delete( func ); },
-		write( aBuf ){ os.write( fd, aBuf, 0, aBuf.byteLength ); }
+		write( aBuf ){ os.write( fds[ 1 ], aBuf, 0, aBuf.byteLength ); }
 	};
 
 	if( typeof func === 'function' ) listeners[ 'connect' ].add( func );

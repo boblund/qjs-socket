@@ -3,36 +3,46 @@ import * as std from 'std';
 import { Server } from 'socket.so';
 import { strToUint8 } from './strToUint8.mjs';
 
-os.signal( os.SIGINT, () => {
+if( scriptArgs.length > 3 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } port [tls]` );
+	std.exit( 1 );
+}
+const [ port, tls = false ] = scriptArgs.slice( 1 );
+console.log( `tls: ${ tls  }` );
+const server = new Server();
+const { stop, pipe_fd } = tls
+	? server.listen( { port, key: 'key.pem', cert: 'cert.pem' } )
+	: server.listen( { port } );
+os.signal( os.SIGUSR1, () => {
+	stop();
 	console.log( 'server stopped' );
 	std.exit( 0 );
 } );
-
-if( scriptArgs.length != 2 ){
-	console.log( `Usage: ${ scriptArgs[ 0 ] } port` );
-	std.exit( 1 );
-}
-const port = scriptArgs[ 1 ];
-const server = new Server;
-const { stop, pipe_fd } = server.listen( port );
 console.log( `Socket server started on port: ${ port }` );
-const fdBuff = new Uint8Array( 4 );
+const fdBuff = new Int32Array( 2 );
 const READBUF_CHUNK_SIZE = 4096;
 
-function clientServer( client_fd ){
+let response =
+	"HTTP/1.1 200 OK\r\n" +
+	"Content-Type: text/plain\r\n" +
+	"Content-Length: 12\r\n" +
+	"Connection: Keep-Alive\r\n" +
+	"\r\n" +
+	"Hello, World";
+
+function clientServer( client_r_fd, client_w_fd ){
 	const readBuf = new Uint8Array( READBUF_CHUNK_SIZE );
 	let n;
 	while( true ){
-		if ( ( n = os.read( client_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
-			const msg = String.fromCharCode( ...new Uint8Array( readBuf.buffer, 0, n ) );
-			console.log( `client msg: ${ msg }` );
-			let ab = strToUint8( 'clientServer reply: ' + msg ).buffer;
-			os.write( client_fd, ab, 0, ab.byteLength );
+		if ( ( n = os.read( client_r_fd, readBuf.buffer, 0, readBuf.length ) )  > 0 ) {
+			let ab = strToUint8( response ).buffer;
+			os.write( client_w_fd, ab, 0, ab.byteLength );
 			readBuf.fill( 0 );
 		} else {
-			console.log( `client disconnected on fd ${ client_fd }` );
-			os.setReadHandler( client_fd, null );
-			os.close( client_fd );
+			console.log( `client disconnected on fd ${ client_r_fd }` );
+			os.setReadHandler( client_r_fd, null );
+			os.close( client_r_fd );
+			os.close( client_w_fd );
 			break;
 		}
 	}
@@ -40,9 +50,10 @@ function clientServer( client_fd ){
 
 // Read pipe from C side to get client attaches
 os.setReadHandler( pipe_fd, () => {
-	if( os.read( pipe_fd, fdBuff.buffer, 0, fdBuff.length ) > 0 ){
-		const client_fd = new DataView( fdBuff.buffer ).getInt32( 0, true );
-		os.setReadHandler( client_fd, () => clientServer( client_fd ) );
+	let n;
+	if( ( n = os.read( pipe_fd, fdBuff.buffer, 0, fdBuff.length * 4 ) ) > 0 ){
+		const [ ssl_r_fd, ssl_w_fd ] = Array.from( fdBuff );
+		os.setReadHandler( ssl_r_fd, () => clientServer( ssl_r_fd, ssl_w_fd ) );
 	} else {
 		console.log( 'server stopping' );
 		os.close( pipe_fd );

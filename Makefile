@@ -1,19 +1,17 @@
 QJSC = /usr/local/bin/qjsc
 CC = gcc
-CFLAGS = -g -O0 -Wall -fPIC -I/usr/local/include/quickjs
-LDFLAGS = -L/usr/local/lib/quickjs -lquickjs -lm -lpthread -ldl
+CFLAGS = -O2 -Wall -fPIC -I/usr/local/include/quickjs -I/opt/homebrew/opt/openssl/include
+LDFLAGS = -L/usr/local/lib/quickjs -lquickjs -L/opt/homebrew/opt/openssl/lib -lssl -lcrypto -lm -lpthread -ldl
 
 # socket
 socket.o: socket.c
 	$(CC) $(CFLAGS) -c socket.c -o socket.o
 
 socket.so: socket.c
-	$(CC) -fPIC -shared -DJS_SHARED_LIBRARY -o socket.so socket.c \
-	    -I/usr/local/include/quickjs -L/usr/local/lib/quickjs \
-	    -lquickjs -lm -lpthread -ldl
+	$(CC) -fPIC -shared -DJS_SHARED_LIBRARY -o socket.so socket.c $(CFLAGS) $(LDFLAGS)
 
 # net-client
-net-client.c: net-client.js
+net-client.c: net-client.js net.mjs
 	$(QJSC) -e -M socket.so,socket -o net-client.c net-client.js net.mjs
 
 net-client.o: net-client.c
@@ -23,8 +21,9 @@ net-client: net-client.o socket.o
 	$(CC) $(LDFLAGS) -o net-client net-client.o socket.o
 
 # net-server
-net-server.c: net-server.js
+net-server.c: net-server.js net.mjs
 	$(QJSC) -e -M socket.so,socket -o net-server.c net-server.js net.mjs
+# if socket.so dynamically linked:	qjsc -e -D socket.so -o net-server.c net-server.js net.mjs
 
 net-server.o: net-server.c
 	$(CC) $(CFLAGS) -c net-server.c -o net-server.o
