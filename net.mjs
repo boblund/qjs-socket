@@ -54,6 +54,56 @@ export function createServer( createServerCb ){
 	return ret;
 }
 
+// s = [protocol://]v4|v6|host[:port][/path]
+// returns { protocol, addr, port, path }
+
+function parseUrl( s ){
+	let addr, addrEnd, port, path;
+
+	// Determine protocol
+	let [ protocol, rest ] = s.split( '://' );
+	if( rest === undefined ){
+		rest = protocol;
+		protocol = 'http';
+	}
+
+	// find the addr
+	if( rest[0] === '[' ){
+		addrEnd = rest.indexOf( ']' );
+		addr = rest.slice( 1, addrEnd );
+		rest = rest.slice( addrEnd + 1 );
+	} else {
+		addrEnd = rest[ 0 ] === ':'
+			? 0
+			: rest.indexOf( ':' ) > -1
+				? rest.indexOf( ':' )
+				: rest.indexOf( '/' );
+
+		if( addrEnd === -1 ){
+			addr = rest;
+			rest = '';
+		}else{
+			addr = rest.slice( 0, addrEnd );
+			rest = rest.slice( addrEnd );
+		}
+	}
+
+	//find port and path
+	if( rest !== '' ){
+		if( rest[ 0 ] === ':' ){
+			let portEnd = rest.indexOf( '/' );
+			portEnd = portEnd === -1 ? rest.length : portEnd;
+			port = Number( rest.slice( 1, portEnd ) );
+			path = rest.slice( portEnd );
+			path = path == '' ? undefined : path;
+		}else{
+			path = rest;
+		}
+	}
+
+	return( { protocol, addr, port, path } );
+}
+
 export function createConnection( func = undefined ){
 	const listeners = {
 		data: new Set,
@@ -65,11 +115,14 @@ export function createConnection( func = undefined ){
 	let fds, client;
 
 	const socket = {
-		connect( { port, ip, tls }, func = undefined ){
+		connect( url, func = undefined ){
 			if( typeof func === 'function' ) listeners[ 'connect' ].add( func );
 			const CHUNK_SIZE = 4096;
 			client = new Client();
-			fds = client.connect( { ip, port, tls } );
+			const { protocol, addr, port } = parseUrl( url );
+			const { ipv4, ipv6 } = client.resolveAddr( addr );
+			fds = client.connect( { ip: ipv4 ? ipv4 : ipv6, port, tls: protocol === 'https' ? true : undefined } );
+
 			if( fds === undefined ){
 				listeners.error.forEach( func => func( -fds[ 0 ] ) );
 				return undefined;
