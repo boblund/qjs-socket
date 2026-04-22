@@ -4,16 +4,14 @@ import { strToUint8 } from './strToUint8.mjs';
 
 
 const CHUNK_SIZE = 4096;
-if( scriptArgs.length < 2 || scriptArgs.length > 4 ){
-	console.log( `Usage: ${ scriptArgs[ 0 ] } port [ip [tls]]` );
+if( scriptArgs.length != 2 ){
+	console.log( `Usage: ${ scriptArgs[ 0 ] } [(http|https)://](ip4Addr|hostname):port` );
 	std.exit( 1 );
 }
-let [ port, ip = '127.0.0.1', tls ] = scriptArgs.slice( 1 );
-tls = tls ? true : undefined;
 
 const client = createConnection();
 client.on( 'close', () => { std.exit( 0 ); } );
-client.connect( { port, ip, tls }, () => { client.write( strToUint8( `client sending data` ).buffer ); } );
+client.connect( scriptArgs[ 1 ], () => { client.write( strToUint8( `client sending data` ).buffer ); } );
 
 client.on( 'data', ( msg ) => {
 	console.log( `client.onData:\n${ String.fromCharCode( ...new Uint8Array( msg ) ) }` );
