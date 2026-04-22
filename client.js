@@ -19,6 +19,7 @@ if( scriptArgs.length < 2 || scriptArgs.length > 4 ){
 let [ port, ip = '127.0.0.1', tls ] = scriptArgs.slice( 1 );
 tls = tls ? true : undefined;
 const client = new Client();
+( { ipv4: ip } = client.resolveAddr( ip ) );
 
 let fds = client.connect( { ip, port, tls } );
 os.setReadHandler( fds[ 0 ], () => { clientApp( fds[ 0 ] ); } );
