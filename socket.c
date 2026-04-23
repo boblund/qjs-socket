@@ -35,12 +35,14 @@ static void sigint_handler(int sig) {
 
 typedef struct {
     SSL *ssl;
+		SSL_CTX* ctx;
     int fds[2];
 } ssl_thread_arg_t;
 
-void create_ssl_thread( SSL* ssl, void* func( void*), int* fds ){
+void create_ssl_thread( SSL* ssl, SSL_CTX* ctx, void* func( void*), int* fds ){
   ssl_thread_arg_t* args = malloc( sizeof( ssl_thread_arg_t ) );
   args->ssl = ssl;
+	args->ctx = ctx;
 
   int to_thread_fds[ 2 ];
   pipe( to_thread_fds );
@@ -72,7 +74,6 @@ static JSClassID js_client_class_id;
 static void js_client_finalizer(JSRuntime *rt, JSValue val)
 {
     JSClientData *s = JS_GetOpaque(val, js_client_class_id);
-		//printf("FINALIZER called for %p\n", s);
     if (s == NULL ) return;
 		if (s->socket_fd >= 0) {
 			close(s->socket_fd);
@@ -204,6 +205,7 @@ void *client_ssl_thread(void *arg) {
 		close( SSL_get_fd( args->ssl ) );
     SSL_shutdown(args->ssl);
     SSL_free(args->ssl);
+		SSL_CTX_free(args->ctx);
 		close(args->fds[1]);
 		close(args->fds[0]);
     free(args);
@@ -280,7 +282,7 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 					close(client_fd);
 					return JS_UNDEFINED;
 				}else{
-					create_ssl_thread( ssl, client_ssl_thread, js_fds);
+					create_ssl_thread( ssl, ssl_ctx, client_ssl_thread, js_fds);
 				}
 		}
 		JS_SetPropertyUint32(ctx, arr, 0, JS_NewInt32(ctx, js_fds[0]));
@@ -313,7 +315,6 @@ static JSClassID js_server_class_id;
 static void js_server_finalizer(JSRuntime *rt, JSValue val)
 {
     JSServerData *s = JS_GetOpaque(val, js_server_class_id);
-		//printf("FINALIZER called for %p\n", s);
     if (s == NULL ) return;
 		if (s->socket_fd >= 0) {
 			close(s->socket_fd);
@@ -393,7 +394,6 @@ void *server_ssl_thread(void *arg) {
 		fds[0].events = POLLIN | POLLHUP | POLLERR;
 		fds[1].fd     = args->fds[0];
 		fds[1].events = POLLIN | POLLHUP;
-		printf("[server_ssl_thread] start client fd %d\n", fds[0].fd);
     while (1) {
         int ready = poll(fds, 2, -1);
         if (ready < 0) { perror("poll"); break; }
@@ -415,6 +415,7 @@ void *server_ssl_thread(void *arg) {
 		close( SSL_get_fd( args->ssl ) );
     SSL_shutdown(args->ssl);
     SSL_free(args->ssl);
+		SSL_CTX_free(args->ctx);
 		close(args->fds[1]);
 		close(args->fds[0]);
     free(args);
@@ -460,7 +461,7 @@ void* accept_thread_func( void* arg ){
 						continue;
 				}
 
-				create_ssl_thread( ssl, server_ssl_thread, js_fds );
+				create_ssl_thread( ssl, ctx, server_ssl_thread, js_fds );
 				int bytes = write( accept_thread_arg->pipe_w_fd, js_fds, sizeof(js_fds) );
 				if(bytes == -1 && errno == EPIPE) {
 						printf("accept_thread_func EPIPE error on fd %d.\n", accept_thread_arg->pipe_w_fd );
