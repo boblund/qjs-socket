@@ -112,47 +112,6 @@ static JSValue js_client_ctor(JSContext *ctx,
     return JS_EXCEPTION;
 }
 
-static JSValue js_client_get_addr_info(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
-		if( argc != 1){
-			perror( "js_client_get_addr_info argc != 1" );
-			return JS_UNDEFINED;
-		}
-
-	  struct addrinfo hints={0}, *res, *rp;
-    hints.ai_family   = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-		hints.ai_flags = AI_NUMERICSERV;
-
-		const char* host_name = JS_ToCString( ctx, argv[0] );
-    if (getaddrinfo( host_name, NULL, &hints, &res) != 0) {
-        perror("getaddrinfo");
-        return JS_UNDEFINED;
-    }
-
-		int f;
-		char v4[INET_ADDRSTRLEN] = {0};
-		char v6[INET6_ADDRSTRLEN] = {0};
-
-		for( rp = res, f = 0;  f != 3 && rp != NULL; rp = rp->ai_next ){
-			if( rp->ai_family == AF_INET ){
-				struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
-				inet_ntop(AF_INET, &ipv4->sin_addr, v4, INET_ADDRSTRLEN);
-				f |= 1;
-			} else if( rp->ai_family == AF_INET6 ) {
-				struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
-				inet_ntop(AF_INET6, &ipv6->sin6_addr, v6, INET6_ADDRSTRLEN);
-				f |= 2;
-			}
-		}
-		JS_FreeCString( ctx, host_name );
-		freeaddrinfo(res);
-
-		JSValue js_obj = JS_NewObject(ctx);
-		JS_SetPropertyStr(ctx, js_obj, "ipv4", JS_NewString(ctx, v4 ) );
-		JS_SetPropertyStr(ctx, js_obj, "ipv6", JS_NewString(ctx, v6 ) );
-		return js_obj;
-}
-
 static JSValue js_client_get_fd(JSContext *ctx, JSValueConst this_val, int magic) {
     JSClientData *s = JS_GetOpaque2(ctx, this_val, js_client_class_id);
     if (!s) return JS_EXCEPTION;
@@ -222,21 +181,23 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
         return JS_EXCEPTION;
     }
 
-    // Extract 'ip' as string
-    JSValue js_ip = JS_GetPropertyStr(ctx, argv[0], "ip");
-		const char* c_ip;
-		if( JS_VALUE_GET_TAG( js_ip ) == JS_TAG_UNDEFINED ){
-			c_ip = "127.0.0.1";
+    // Extract 'host' as string
+    JSValue js_host = JS_GetPropertyStr(ctx, argv[0], "host");
+		const char* c_host;
+		if( JS_VALUE_GET_TAG( js_host ) == JS_TAG_UNDEFINED ){
+			c_host = "localhost";
 		} else {
-			c_ip = JS_ToCString( ctx, js_ip );
-			JS_FreeValue( ctx, js_ip );
+			c_host = JS_ToCString( ctx, js_host );
+			JS_FreeValue( ctx, js_host );
 		}
+		printf( "c_host: %s\n", c_host);
 
     // Extract 'port' as number
 		int port;
     JSValue js_port = JS_GetPropertyStr(ctx, argv[0], "port");
 		if( JS_VALUE_GET_TAG( js_port ) == JS_TAG_UNDEFINED ){
 			perror( "connect: { port } required" );
+			return JS_UNDEFINED;
 		} else {
 			JS_ToInt32( ctx, &port, js_port );
 			JS_FreeValue( ctx, js_port );
@@ -250,18 +211,44 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 			JS_FreeValue( ctx, js_tls );
 		}
 
+	  struct addrinfo hints={0}, *res, *rp;
+    hints.ai_family   = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_NUMERICSERV;
+    if (getaddrinfo( c_host, NULL, &hints, &res) != 0) {
+        perror("getaddrinfo");
+        return JS_UNDEFINED;
+    }
+		int f;
+		char v4[INET_ADDRSTRLEN] = {0};
+		char v6[INET6_ADDRSTRLEN] = {0};
+
+		for( rp = res, f = 0;  f != 3 && rp != NULL; rp = rp->ai_next ){
+			if( rp->ai_family == AF_INET ){
+				struct sockaddr_in *ipv4 = (struct sockaddr_in *)rp->ai_addr;
+				inet_ntop(AF_INET, &ipv4->sin_addr, v4, INET_ADDRSTRLEN);
+				f |= 1;
+			} else if( rp->ai_family == AF_INET6 ) {
+				struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)rp->ai_addr;
+				inet_ntop(AF_INET6, &ipv6->sin6_addr, v6, INET6_ADDRSTRLEN);
+				f |= 2;
+			}
+		}
+		if (JS_VALUE_GET_TAG(js_host) != JS_TAG_UNDEFINED) {
+				JS_FreeCString(ctx, c_host);
+		}
+		freeaddrinfo(res);
+
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0) { perror("socket"); exit(EXIT_FAILURE); }
 		s->socket_fd = client_fd;
-
     struct sockaddr_in server_addr; // struct sockaddr_in6 server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;  //server_addr.sin6_family = AF_INET6;
     server_addr.sin_port = htons(port); //server_addr.sin6_port = htons(port);
-    if (inet_pton(AF_INET, c_ip, &server_addr.sin_addr) <= 0) { //if (inet_pton(AF_INET6, c_ip, &server_addr.sin6_addr) <= 0) {
+    if (inet_pton(AF_INET, v4, &server_addr.sin_addr) <= 0) { //if (inet_pton(AF_INET6, c_ip, &server_addr.sin6_addr) <= 0) {
         perror("inet_pton"); close(client_fd); exit(EXIT_FAILURE);
     }
-		JS_FreeCString( ctx, c_ip );
 
     if (connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("connect"); close(client_fd); exit(EXIT_FAILURE);
@@ -298,7 +285,6 @@ static JSClassDef js_client_class = {
 static const JSCFunctionListEntry js_client_proto_funcs[] = {
     JS_CFUNC_DEF("connect", 2, js_client_connect),
 		JS_CFUNC_DEF("end", 0, js_client_end),
-		JS_CFUNC_DEF("resolveAddr", 1, js_client_get_addr_info),
 		JS_CGETSET_MAGIC_DEF("fd", js_client_get_fd, NULL, 0),
 };
 

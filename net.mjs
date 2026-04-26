@@ -14,7 +14,6 @@ export function createServer( createServerCb ){
 					const socket = new class{
 						read_fd = fds[ 0 ];
 						write_fd = fds[ 1 ];
-						//write_fd = https ? fds[ 1 ] : fds[ 0 ];
 						listeners = {
 							data: () => {},
 							close: () => {},
@@ -57,51 +56,46 @@ export function createServer( createServerCb ){
 // s = [protocol://]v4|v6|host[:port][/path]
 // returns { protocol, addr, port, path }
 
-function parseUrl( s ){
-	let addr, addrEnd, port, path;
+function parseUrl( url ){
+	let addr, path, port, protocol, ptr, urlEnd = url.length - 1 ;
 
-	// Determine protocol
-	let [ protocol, rest ] = s.split( '://' );
-	if( rest === undefined ){
-		rest = protocol;
-		protocol = 'http';
-	}
-
-	// find the addr
-	if( rest[0] === '[' ){
-		addrEnd = rest.indexOf( ']' );
-		addr = rest.slice( 1, addrEnd );
-		rest = rest.slice( addrEnd + 1 );
+	//find protocol
+	if( ( ptr = url.indexOf( '://' ) ) != -1 ){
+		protocol = url.substring( 0, ptr );
+		ptr += 3;
 	} else {
-		addrEnd = rest[ 0 ] === ':'
-			? 0
-			: rest.indexOf( ':' ) > -1
-				? rest.indexOf( ':' )
-				: rest.indexOf( '/' );
-
-		if( addrEnd === -1 ){
-			addr = rest;
-			rest = '';
-		}else{
-			addr = rest.slice( 0, addrEnd );
-			rest = rest.slice( addrEnd );
-		}
+		ptr = 0;
 	}
 
-	//find port and path
-	if( rest !== '' ){
-		if( rest[ 0 ] === ':' ){
-			let portEnd = rest.indexOf( '/' );
-			portEnd = portEnd === -1 ? rest.length : portEnd;
-			port = Number( rest.slice( 1, portEnd ) );
-			path = rest.slice( portEnd );
-			path = path == '' ? undefined : path;
-		}else{
-			path = rest;
-		}
+	// find addr
+	if( url[ ptr ] == '[' ){
+		let end = url.indexOf( ']', ptr );
+		addr = url.substring( ptr, end );
+		ptr = end + 1;
 	}
 
-	return( { protocol, addr, port, path } );
+	let semi = url.indexOf( ':', ptr );
+	let slash = url.indexOf( '/', ptr );
+
+	if( addr == undefined ) {
+		let end = semi != -1 ? semi : ( slash != -1 ? slash : urlEnd );
+		addr = url.substring( ptr, end + 1 );
+		ptr = end;
+	}
+
+	// find port
+	if( semi != -1 ){
+		if( slash != -1 && slash < semi ) return undefined;
+		let end = slash != -1 ? slash - 1 : urlEnd;
+		port = Number( url.substring( ptr + 1, end + 1 ) );
+		if( isNaN( port ) ) return undefined;
+		ptr = end + 1;
+	}
+
+	// find path
+	if( slash != -1 ) path = url.substring( ptr );
+
+	return { protocol, addr, port, path };
 }
 
 export function createConnection( func = undefined ){
@@ -120,8 +114,7 @@ export function createConnection( func = undefined ){
 			const CHUNK_SIZE = 4096;
 			client = new Client();
 			const { protocol, addr, port } = parseUrl( url );
-			const { ipv4, ipv6 } = client.resolveAddr( addr );
-			fds = client.connect( { ip: ipv4 ? ipv4 : ipv6, port, tls: protocol === 'https' ? true : undefined } );
+			fds = client.connect( { port, addr, tls: protocol === 'https' ? true : undefined } );
 
 			if( fds === undefined ){
 				listeners.error.forEach( func => func( -fds[ 0 ] ) );
