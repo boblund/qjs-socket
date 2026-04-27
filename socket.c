@@ -112,12 +112,6 @@ static JSValue js_client_ctor(JSContext *ctx,
     return JS_EXCEPTION;
 }
 
-static JSValue js_client_get_fd(JSContext *ctx, JSValueConst this_val, int magic) {
-    JSClientData *s = JS_GetOpaque2(ctx, this_val, js_client_class_id);
-    if (!s) return JS_EXCEPTION;
-    return JS_NewInt32(ctx, s->socket_fd );
-}
-
 static JSValue js_client_end(JSContext *ctx, JSValueConst this_val,int argc, JSValueConst *argv){
 		JSClientData *s = JS_GetOpaque2(ctx, this_val, js_client_class_id);
     if (!s) return JS_EXCEPTION;
@@ -284,8 +278,7 @@ static JSClassDef js_client_class = {
 
 static const JSCFunctionListEntry js_client_proto_funcs[] = {
     JS_CFUNC_DEF("connect", 2, js_client_connect),
-		JS_CFUNC_DEF("end", 0, js_client_end),
-		JS_CGETSET_MAGIC_DEF("fd", js_client_get_fd, NULL, 0),
+		JS_CFUNC_DEF("end", 0, js_client_end)
 };
 
 /* Server */
@@ -344,12 +337,6 @@ static JSValue js_server_end(JSContext *ctx, JSValueConst this_val,int argc, JSV
 		}
 		shutdown(fd, SHUT_WR);
 		return JS_UNDEFINED;
-}
-
-static JSValue js_server_get_fd(JSContext *ctx, JSValueConst this_val, int magic) {
-    JSServerData *s = JS_GetOpaque2(ctx, this_val, js_server_class_id);
-    if (!s) return JS_EXCEPTION;
-    return JS_NewInt32(ctx, s->socket_fd );
 }
 
 SSL_CTX *create_server_ssl_ctx( const char* key, const char* cert ) {
@@ -568,8 +555,7 @@ static JSClassDef js_server_class = {
 
 static const JSCFunctionListEntry js_server_proto_funcs[] = {
     JS_CFUNC_DEF("listen", 0, js_server_listen),
-		JS_CFUNC_DEF("end", 0, js_server_end),
-		JS_CGETSET_MAGIC_DEF("fd", js_server_get_fd, NULL, 0),
+		JS_CFUNC_DEF("end", 0, js_server_end)
 };
 
 static int js_socket_init(JSContext *ctx, JSModuleDef *m)
