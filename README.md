@@ -2,7 +2,7 @@
 
 ## Overview
 
-qjs-socket implements a TCP/TLS socket api for quickjs. socket.c implements a C module that exports a Client and Server class that implement the TCP socket and TLS functionality. JavaScript imports this module and provides all other application logic, e.g. reading/writing, the socket, HTTP/S or ws/s.
+qjs-socket implements a TCP/TLS socket api for quickjs. socket.c exports a Client and Server class that implement the TCP socket and TLS functionality. JavaScript imports this module and provides all other application logic, e.g. reading/writing, the socket, HTTP/S or ws/s.
 
 The motivation for qjs-socket was to embed an HTTP/WS server in a quickjs application to provide a local UI with the minimal amout of code; [qjs-wsHttpServer](www.gitbub.com/boblund/qjs-wsHttpServer.git) is an example (that embeds favicon.ico, index.html and index.js) in a 1 MB executable file. A design goal was to do the minimum required for client and server sockets and TLS in the C module, keeping the bulk of application and UI development in JS, HTML and CSS.
 
@@ -17,13 +17,13 @@ import{ Client, Server } from 'socket.so'
 const client = new Client;
 
 #### Methods
-const fds = connect( { ip, port \[, tls \] } ) -  Connect to server.
-- ip: server host ip address
-- port: server host port
-- tls: if true, use tls, if missing or false unencrypted
-- Returns: an array with the server's read and write socket fds \[read_fd, write_fd\].
+const fds = connect( { port \[ host \[ tls \] \] } ) -  Connect to server.
+- port: server port
+- host: optional server hostname or ip address ( localhost if missing )
+- tls: if true, use tls, unencrypted if missing or false
+- Returns: an array with the server's read and write socket fds \[ read_fd, write_fd \].
 
-The quickjs client application will use os.setReadHandler() with the socket's fds\[0\] to asychronously wait for server socket data.
+The quickjs client application will use os.setReadHandler() with the socket's fds\[ 0 \] to asychronously wait for server socket data.
 
 client.js provides an example of a socket client.
 
@@ -32,7 +32,7 @@ client.js provides an example of a socket client.
 const server = new Server( );
 
 #### Methods
-server.listen( { port \[, key, cert\]} ) - Listen for client connects.
+server.listen( { port \[, key, cert \] } ) - Listen for client connects.
 - port: port to listen on for connects
 - key, cert: if specified, they will be used for TLS, otherwise the socket will not use encrytpion
 - Returns:
@@ -68,10 +68,8 @@ Emulates a subset of the nodejs client net.Socket.
 - error: Emitted when an error occurs. The argument is the C errno.
 
 #### Methods
-client.connect( { port, ip \[, tls\] }, func ) - Connect to server.
-- ip: server host ip address
-- port: server host port
-- tls: true to use TLS, false or absent otherwise
+client.connect( url, func ) - Connect to server.
+- url: server url, i.e. \[ \( http | https ):// ]\( ip | hostname ):port
 - func: function to call on 'connect' event
 - Returns: undefined
 
