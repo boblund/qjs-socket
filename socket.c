@@ -26,11 +26,11 @@
 #define JS_INIT_MODULE js_init_module_socket
 #endif
 
+static pthread_t global_accept_thread;
+
 static void sigint_handler(int sig) {
-		printf("socket.c signal %d\n", sig);
     (void)sig;
-		raise(SIGUSR1);
-    //_exit(0);
+		raise(SIGUSR1); // let JS side do any cleanup
 }
 
 typedef struct {
@@ -184,7 +184,6 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 			c_host = JS_ToCString( ctx, js_host );
 			JS_FreeValue( ctx, js_host );
 		}
-		printf( "c_host: %s\n", c_host);
 
     // Extract 'port' as number
 		int port;
@@ -403,8 +402,6 @@ typedef struct{
 		const char* cert;
 } accept_thread_arg_t;
 
-static atomic_bool global_stop_flag = false;
-
 void* accept_thread_func( void* arg ){
 		accept_thread_arg_t* accept_thread_arg = (accept_thread_arg_t*)arg;
 		int flags = fcntl(accept_thread_arg->listen_fd, F_GETFL, 0);
@@ -413,14 +410,17 @@ void* accept_thread_func( void* arg ){
         return NULL;
     }
 
-		while( !atomic_load(&global_stop_flag) ){
+		while( 1 ){
 			// fds for JS r/w: https ? ssl thread pipes : client socket
 			int js_fds[2];
 			struct sockaddr_in client_addr;
 			socklen_t client_len = sizeof(client_addr);
 			if( accept_thread_arg->key && accept_thread_arg->cert ){
 				int client_fd = accept(accept_thread_arg->listen_fd, (struct sockaddr *)&client_addr, &client_len);
-				if( client_fd < 0 ){ perror("accept"); continue; }
+				if( client_fd < 0 ){
+					perror("accept client_fd < 0");
+					continue;
+				}
 				printf("[accpet_thread] TLS client connected from %s\n", inet_ntoa(client_addr.sin_addr));
 
 				SSL_CTX *ctx = create_server_ssl_ctx( accept_thread_arg->key, accept_thread_arg->cert );
@@ -455,17 +455,15 @@ void* accept_thread_func( void* arg ){
 				}
 			}
 		}
-		printf( "attach_thread stopped fd: %d\n", accept_thread_arg->listen_fd );
+		printf( "accept_thread stopped fd: %d\n", accept_thread_arg->listen_fd );
 		free( arg );
 		return NULL;
 }
 
-static pthread_t global_accept_thread;
 static int pipefds[ 2 ];
 
 JSValue js_stop_listen(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
-		printf( "attach_thread stopping\n" );
-    atomic_store(&global_stop_flag, true);
+		printf( "accpet_thread stopping\n" );
     return JS_UNDEFINED;
 }
 
@@ -531,9 +529,6 @@ static JSValue js_server_listen(JSContext *ctx, JSValueConst this_val,
 		accept_thread_arg->pipe_w_fd = pipefds[ 1 ];
 		accept_thread_arg->cert = cert;
 		accept_thread_arg->key = key;
-
-		atomic_store(&global_stop_flag, false);
-
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);

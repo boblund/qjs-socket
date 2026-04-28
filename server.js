@@ -14,8 +14,8 @@ const { stop, pipe_fd } = tls
 	? server.listen( { port, key: 'key.pem', cert: 'cert.pem' } )
 	: server.listen( { port } );
 os.signal( os.SIGUSR1, () => {
-	stop();
-	console.log( 'server stopped' );
+	//stop();
+	console.log( '\nserver stopped' );
 	std.exit( 0 );
 } );
 console.log( `Socket server started on port: ${ port }` );
