@@ -30,6 +30,7 @@ static pthread_t global_accept_thread;
 
 static void sigint_handler(int sig) {
     (void)sig;
+		// do any cleanup
 		raise(SIGUSR1); // let JS side do any cleanup
 }
 
@@ -73,6 +74,7 @@ static JSClassID js_client_class_id;
 
 static void js_client_finalizer(JSRuntime *rt, JSValue val)
 {
+		printf( "client_finalizer" );
     JSClientData *s = JS_GetOpaque(val, js_client_class_id);
     if (s == NULL ) return;
 		if (s->socket_fd >= 0) {
@@ -115,7 +117,11 @@ static JSValue js_client_ctor(JSContext *ctx,
 static JSValue js_client_end(JSContext *ctx, JSValueConst this_val,int argc, JSValueConst *argv){
 		JSClientData *s = JS_GetOpaque2(ctx, this_val, js_client_class_id);
     if (!s) return JS_EXCEPTION;
-		shutdown(s->socket_fd, SHUT_WR);
+		if( s->socket_fd > 0 ){
+			shutdown(s->socket_fd, SHUT_WR);
+			close(s->socket_fd);
+			s->socket_fd = -1;
+		}
 		return JS_UNDEFINED;
 }
 
@@ -127,7 +133,7 @@ SSL_CTX* create_client_ssl_ctx(void) {
 
     // Skip certificate verification since server uses a self-signed cert.
     // In production: use SSL_VERIFY_PEER and load the CA cert instead.
-    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+		//SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL); REMOVED FOR AWS
 
     return ctx;
 }
@@ -227,9 +233,8 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 				f |= 2;
 			}
 		}
-		if (JS_VALUE_GET_TAG(js_host) != JS_TAG_UNDEFINED) {
-				JS_FreeCString(ctx, c_host);
-		}
+
+		JS_FreeCString(ctx, c_host);
 		freeaddrinfo(res);
 
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -254,6 +259,7 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 			  SSL_CTX* ssl_ctx = create_client_ssl_ctx();
 				SSL *ssl = SSL_new(ssl_ctx);
 				SSL_set_fd(ssl, client_fd);
+				SSL_set_tlsext_host_name(ssl, c_host);  // added for AWS - sets SNI
 				if (SSL_connect(ssl) <= 0) {
 					fprintf(stderr, "SSL_accept failed\n");
 					SSL_shutdown(ssl);
@@ -581,6 +587,10 @@ static int js_socket_init(JSContext *ctx, JSModuleDef *m)
     JS_SetClassProto(ctx, js_server_class_id, server_proto);
 
     JS_SetModuleExport(ctx, m, "Server", server_class);
+
+		// JS_SetModuleExport(ctx, m, "someFunction",
+    // JS_NewCFunction(ctx, js_some_function, "someFunction", 1));  // 1 = expected arg count
+
     return 0;
 }
 
@@ -599,5 +609,6 @@ JSModuleDef *JS_INIT_MODULE(JSContext *ctx, const char *module_name)
         return NULL;
     JS_AddModuleExport(ctx, m, "Client");
 		JS_AddModuleExport(ctx, m, "Server");
+		// JS_AddModuleExport(ctx, m, "someFunction"); // example of exporting a function
     return m;
 }
