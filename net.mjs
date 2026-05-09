@@ -1,5 +1,7 @@
+import 'std'; //required for proper quickjs async I/O init, do import * as std from 'std'; if std is used
 import * as os from 'os';
 import { Client, Server } from 'socket.so';
+import { parseUrl } from './parseUrl.mjs';
 
 export function createServer( createServerCb ){
 	const server = new Server();
@@ -53,51 +55,6 @@ export function createServer( createServerCb ){
 	return ret;
 }
 
-// s = [protocol://]v4|v6|host[:port][/path]
-// returns { protocol, addr, port, path }
-
-function parseUrl( url ){
-	let addr, path, port, protocol, ptr, urlEnd = url.length - 1 ;
-
-	//find protocol
-	if( ( ptr = url.indexOf( '://' ) ) != -1 ){
-		protocol = url.substring( 0, ptr );
-		ptr += 3;
-	} else {
-		ptr = 0;
-	}
-
-	// find addr
-	if( url[ ptr ] == '[' ){
-		let end = url.indexOf( ']', ptr );
-		addr = url.substring( ptr, end );
-		ptr = end + 1;
-	}
-
-	let semi = url.indexOf( ':', ptr );
-	let slash = url.indexOf( '/', ptr );
-
-	if( addr == undefined ) {
-		let end = semi != -1 ? semi : ( slash != -1 ? slash : urlEnd );
-		addr = url.substring( ptr, end + 1 );
-		ptr = end;
-	}
-
-	// find port
-	if( semi != -1 ){
-		if( slash != -1 && slash < semi ) return undefined;
-		let end = slash != -1 ? slash - 1 : urlEnd;
-		port = Number( url.substring( ptr + 1, end + 1 ) );
-		if( isNaN( port ) ) return undefined;
-		ptr = end + 1;
-	}
-
-	// find path
-	if( slash != -1 ) path = url.substring( ptr );
-
-	return { protocol, addr, port, path };
-}
-
 export function createConnection( func = undefined ){
 	const listeners = {
 		data: new Set,
@@ -113,8 +70,9 @@ export function createConnection( func = undefined ){
 			if( typeof func === 'function' ) listeners[ 'connect' ].add( func );
 			const CHUNK_SIZE = 4096;
 			client = new Client();
-			const { protocol, addr, port } = parseUrl( url );
-			fds = client.connect( { port, addr, tls: protocol === 'https' ? true : undefined } );
+			let { protocol, addr, port } = parseUrl( url );
+			port = port ? port : ( protocol == 'wss' || protocol == 'https' ? 443 : 80 );
+			fds = client.connect( { port, host: addr, tls: ( protocol === 'https' || protocol == 'wss' ) ? true : undefined } );
 
 			if( fds === undefined ){
 				listeners.error.forEach( func => func( -fds[ 0 ] ) );
