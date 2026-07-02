@@ -38,12 +38,14 @@ typedef struct {
     SSL *ssl;
 		SSL_CTX* ctx;
     int fds[2];
+		void* client_s;
 } ssl_thread_arg_t;
 
-void create_ssl_thread( SSL* ssl, SSL_CTX* ctx, void* func( void*), int* fds ){
+void create_ssl_thread( SSL* ssl, SSL_CTX* ctx, void* func( void*), int* fds, void* client_data ){
   ssl_thread_arg_t* args = malloc( sizeof( ssl_thread_arg_t ) );
   args->ssl = ssl;
 	args->ctx = ctx;
+	args->client_s = client_data;
 
   int to_thread_fds[ 2 ];
   pipe( to_thread_fds );
@@ -54,7 +56,6 @@ void create_ssl_thread( SSL* ssl, SSL_CTX* ctx, void* func( void*), int* fds ){
   pipe( from_thread_fds );
   args->fds[1] = from_thread_fds[1];
   fds[0] = from_thread_fds[0];
-
   pthread_attr_t attr;
   pthread_attr_init(&attr);
   pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
@@ -67,20 +68,32 @@ void create_ssl_thread( SSL* ssl, SSL_CTX* ctx, void* func( void*), int* fds ){
 /* Client */
 
 typedef struct {
-		int socket_fd;
+		int fds[2];
+		_Atomic int server_ssl_fd;
 } JSClientData;
 
 static JSClassID js_client_class_id;
 
 static void js_client_finalizer(JSRuntime *rt, JSValue val)
 {
-		printf( "client_finalizer" );
     JSClientData *s = JS_GetOpaque(val, js_client_class_id);
-    if (s == NULL ) return;
-		if (s->socket_fd >= 0) {
-			close(s->socket_fd);
-			s->socket_fd = -1;
+    if (s == NULL || s->fds[0] < 0 ){
+			js_free_rt(rt, s);
+			return;
 		}
+
+		if( s->server_ssl_fd != -1 ){
+				shutdown( s->server_ssl_fd, SHUT_RDWR );
+				s->server_ssl_fd = -1;
+		}
+
+		if( s->fds[0] == s->fds[1] ){
+			shutdown(s->fds[0], SHUT_WR); // socket
+		} else {
+			close( s->fds[1] ); // pipe
+		}
+		close( s->fds[0] );
+		s->fds[0] = -1; s->fds[1] = -1;
 		js_free_rt(rt, s);
 }
 
@@ -117,11 +130,23 @@ static JSValue js_client_ctor(JSContext *ctx,
 static JSValue js_client_end(JSContext *ctx, JSValueConst this_val,int argc, JSValueConst *argv){
 		JSClientData *s = JS_GetOpaque2(ctx, this_val, js_client_class_id);
     if (!s) return JS_EXCEPTION;
-		if( s->socket_fd > 0 ){
-			shutdown(s->socket_fd, SHUT_WR);
-			close(s->socket_fd);
-			s->socket_fd = -1;
+    if (s == NULL || s->fds[0] < 0 ) return JS_UNDEFINED;
+		//printf( "js_client_end fds: %d %d, server_ssl_fd: %d\n", s->fds[0], s->fds[1], s->server_ssl_fd );
+		if (s->fds[0] < 0) {
+    		//printf("js_client_end: already cleaned up, returning\n");
+				return JS_UNDEFINED;
 		}
+		if( s->fds[0] == s->fds[1] ){
+			shutdown(s->fds[0], SHUT_WR); // socket
+		} else {
+			if( s->server_ssl_fd != -1 ){
+				shutdown( s->server_ssl_fd, SHUT_RDWR );
+				s->server_ssl_fd = -1;
+			}
+			close( s->fds[1] ); // pipe
+		}
+		close( s->fds[0] );
+		s->fds[0] = -1; s->fds[1] = -1;
 		return JS_UNDEFINED;
 }
 
@@ -129,7 +154,9 @@ SSL_CTX* create_client_ssl_ctx(void) {
     SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx) { ERR_print_errors_fp(stderr); exit(1); }
 
+		SSL_CTX_set_options(ctx, SSL_OP_IGNORE_UNEXPECTED_EOF);
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+		SSL_CTX_set_quiet_shutdown(ctx, 1);
 
     // Skip certificate verification since server uses a self-signed cert.
     // In production: use SSL_VERIFY_PEER and load the CA cert instead.
@@ -138,6 +165,7 @@ SSL_CTX* create_client_ssl_ctx(void) {
     return ctx;
 }
 void *client_ssl_thread(void *arg) {
+		int server_closed = 0;
     ssl_thread_arg_t *args = (ssl_thread_arg_t *)arg;
     char buf[4096];
 		struct pollfd fds[2];
@@ -150,23 +178,35 @@ void *client_ssl_thread(void *arg) {
         if (ready < 0) { perror("poll"); break; }
         if (fds[0].revents & POLLIN) {
             int  n = SSL_read(args->ssl, buf, sizeof(buf) - 1);
-            if (n <= 0) break;
+            if (n <= 0){
+							int err = SSL_get_error(args->ssl, n);
+							if(err == SSL_ERROR_ZERO_RETURN) server_closed = 1;
+							if(err == SSL_ERROR_SSL || err == SSL_ERROR_SYSCALL) ERR_print_errors_fp(stderr);
+							break;
+						}
 						write( args->fds[1], buf, n );
         }
 
         // --- main thread sent a message ---
-        if (fds[1].revents & POLLIN) {
+        if (fds[1].revents & ( POLLIN | POLLHUP ) ) {
             int n = read(args->fds[0], buf, sizeof(buf) - 1);
-            if (n <= 0) break;
+            if (n <= 0) { printf( "client_ssl_thread main thread read <= 0" ); break; }
 						SSL_write( args->ssl, buf, n );
         }
     }
-		close( SSL_get_fd( args->ssl ) );
-    SSL_shutdown(args->ssl);
+		int ssl_fd = SSL_get_fd(args->ssl);
+		SSL_set_quiet_shutdown(args->ssl, 1);
+    if(!server_closed) SSL_shutdown(args->ssl);
     SSL_free(args->ssl);
 		SSL_CTX_free(args->ctx);
-		close(args->fds[1]);
+		ERR_clear_error();
 		close(args->fds[0]);
+		close( ssl_fd );
+		JSClientData* ptr = (JSClientData*) args->client_s;
+		ptr->server_ssl_fd = -1;
+		//printf( "writing sentinel\n" );
+		char zero = 0;
+		write(args->fds[1], &zero, 1);  // ← sentinel, not empty write
     free(args);
     return NULL;
 }
@@ -183,13 +223,17 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 
     // Extract 'host' as string
     JSValue js_host = JS_GetPropertyStr(ctx, argv[0], "host");
-		const char* c_host;
+		const char *host_str = JS_IsUndefined(js_host) ? NULL : JS_ToCString(ctx, js_host);
+		const char *c_host = host_str ? host_str : "localhost";
+		JS_FreeValue(ctx, js_host);
+
+		/*const char* c_host;
 		if( JS_VALUE_GET_TAG( js_host ) == JS_TAG_UNDEFINED ){
 			c_host = "localhost";
 		} else {
 			c_host = JS_ToCString( ctx, js_host );
 			JS_FreeValue( ctx, js_host );
-		}
+		}*/
 
     // Extract 'port' as number
 		int port;
@@ -209,7 +253,6 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 			tls = JS_ToBool( ctx, js_tls );
 			JS_FreeValue( ctx, js_tls );
 		}
-
 	  struct addrinfo hints={0}, *res, *rp;
     hints.ai_family   = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -234,12 +277,13 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 			}
 		}
 
-		JS_FreeCString(ctx, c_host);
+		//JS_FreeCString(ctx, c_host);
+		if (host_str) JS_FreeCString(ctx, host_str);  // only free if we allocated it
 		freeaddrinfo(res);
 
     int client_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (client_fd < 0) { perror("socket"); exit(EXIT_FAILURE); }
-		s->socket_fd = client_fd;
+		s->fds[ 0 ] = s->fds[1] = client_fd;
     struct sockaddr_in server_addr; // struct sockaddr_in6 server_addr;
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;  //server_addr.sin6_family = AF_INET6;
@@ -247,14 +291,11 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
     if (inet_pton(AF_INET, v4, &server_addr.sin_addr) <= 0) { //if (inet_pton(AF_INET6, c_ip, &server_addr.sin6_addr) <= 0) {
         perror("inet_pton"); close(client_fd); exit(EXIT_FAILURE);
     }
-
     if (connect(client_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
         perror("connect"); close(client_fd); exit(EXIT_FAILURE);
     }
 
-		int js_fds[2];
 		JSValue arr = JS_NewArray(ctx);
-		js_fds[ 0 ] = js_fds[ 1 ] = client_fd;
 		if( tls ){
 			  SSL_CTX* ssl_ctx = create_client_ssl_ctx();
 				SSL *ssl = SSL_new(ssl_ctx);
@@ -268,11 +309,13 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 					close(client_fd);
 					return JS_UNDEFINED;
 				}else{
-					create_ssl_thread( ssl, ssl_ctx, client_ssl_thread, js_fds);
+					s->server_ssl_fd = SSL_get_fd(ssl);
+					create_ssl_thread( ssl, ssl_ctx, client_ssl_thread, s->fds, (void*) s );
 				}
 		}
-		JS_SetPropertyUint32(ctx, arr, 0, JS_NewInt32(ctx, js_fds[0]));
-		JS_SetPropertyUint32(ctx, arr, 1, JS_NewInt32(ctx, js_fds[1]));
+		JS_SetPropertyUint32(ctx, arr, 0, JS_NewInt32(ctx, s->fds[0]));
+		JS_SetPropertyUint32(ctx, arr, 1, JS_NewInt32(ctx, s->fds[1]));
+		//printf( "socket.c client.connect s->fds[ 0 ]: %d\n", s->fds[0] );
     return arr;
 }
 
@@ -427,7 +470,7 @@ void* accept_thread_func( void* arg ){
 					perror("accept client_fd < 0");
 					continue;
 				}
-				printf("[accpet_thread] TLS client connected from %s\n", inet_ntoa(client_addr.sin_addr));
+				//printf("[accpet_thread] TLS client connected from %s\n", inet_ntoa(client_addr.sin_addr));
 
 				SSL_CTX *ctx = create_server_ssl_ctx( accept_thread_arg->key, accept_thread_arg->cert );
 				SSL *ssl = SSL_new(ctx);
@@ -440,7 +483,7 @@ void* accept_thread_func( void* arg ){
 						continue;
 				}
 
-				create_ssl_thread( ssl, ctx, server_ssl_thread, js_fds );
+				create_ssl_thread( ssl, ctx, server_ssl_thread, js_fds, (void*) NULL );
 				int bytes = write( accept_thread_arg->pipe_w_fd, js_fds, sizeof(js_fds) );
 				if(bytes == -1 && errno == EPIPE) {
 						printf("accept_thread_func EPIPE error on fd %d.\n", accept_thread_arg->pipe_w_fd );
@@ -449,7 +492,7 @@ void* accept_thread_func( void* arg ){
 				}
 			} else {
 				int client_fd = accept(accept_thread_arg->listen_fd, NULL, NULL);
-				printf("[accpet_thread] client connected from %s\n", inet_ntoa(client_addr.sin_addr));
+				//printf("[accpet_thread] client connected from %s\n", inet_ntoa(client_addr.sin_addr));
 				js_fds[ 0 ] = client_fd;
 				js_fds[ 1 ] = client_fd;
 				int bytes = write( accept_thread_arg->pipe_w_fd, js_fds, sizeof(js_fds) );
@@ -545,7 +588,7 @@ static JSValue js_server_listen(JSContext *ctx, JSValueConst this_val,
     JS_SetPropertyStr(ctx, obj, "pipe_fd", JS_NewInt32(ctx, pipefds[ 0 ] ) );
     JS_SetPropertyStr(ctx, obj, "stop", JS_NewCFunction(ctx, js_stop_listen, "stop", 0));
 
-		printf("[Server]%s on port %d, listening on fd %d\n", cert && key ? " TLS" : "", port, listen_fd);
+		//printf("[Server]%s on port %d, listening on fd %d\n", cert && key ? " TLS" : "", port, listen_fd);
     return obj;
 }
 

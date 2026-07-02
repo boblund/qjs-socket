@@ -60,6 +60,7 @@ export function createConnection( func = undefined ){
 		data: new Set,
 		close: new Set,
 		connect: new Set,
+		end: new Set,
 		error: new Set
 	};
 

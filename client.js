@@ -17,8 +17,10 @@ if( scriptArgs.length < 2 || scriptArgs.length > 4 ){
 	std.exit( 1 );
 }
 let [ port, host, tls ] = scriptArgs.slice( 1 );
+//host = host ? host : 'localhost';
 tls = tls ? true : undefined;
 const client = new Client();
+console.log( 'here' );
 let fds = client.connect( { host, port, tls } );
 os.setReadHandler( fds[ 0 ], () => { clientApp( fds[ 0 ] ); } );
 let ab = strToUint8( `client sending data` ).buffer;
