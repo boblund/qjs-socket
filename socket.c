@@ -240,6 +240,8 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
     JSValue js_port = JS_GetPropertyStr(ctx, argv[0], "port");
 		if( JS_VALUE_GET_TAG( js_port ) == JS_TAG_UNDEFINED ){
 			perror( "connect: { port } required" );
+			JS_FreeValue(ctx, js_port);
+			if (host_str) JS_FreeCString(ctx, host_str);
 			return JS_UNDEFINED;
 		} else {
 			JS_ToInt32( ctx, &port, js_port );
@@ -259,6 +261,7 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 		hints.ai_flags = AI_NUMERICSERV;
     if (getaddrinfo( c_host, NULL, &hints, &res) != 0) {
         perror("getaddrinfo");
+				if (host_str) JS_FreeCString(ctx, host_str);
         return JS_UNDEFINED;
     }
 		int f;
@@ -295,7 +298,6 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
         perror("connect"); close(client_fd); exit(EXIT_FAILURE);
     }
 
-		JSValue arr = JS_NewArray(ctx);
 		if( tls ){
 			  SSL_CTX* ssl_ctx = create_client_ssl_ctx();
 				SSL *ssl = SSL_new(ssl_ctx);
@@ -313,6 +315,7 @@ static JSValue js_client_connect(JSContext *ctx, JSValueConst this_val,
 					create_ssl_thread( ssl, ssl_ctx, client_ssl_thread, s->fds, (void*) s );
 				}
 		}
+		JSValue arr = JS_NewArray(ctx);
 		JS_SetPropertyUint32(ctx, arr, 0, JS_NewInt32(ctx, s->fds[0]));
 		JS_SetPropertyUint32(ctx, arr, 1, JS_NewInt32(ctx, s->fds[1]));
 		//printf( "socket.c client.connect s->fds[ 0 ]: %d\n", s->fds[0] );
@@ -530,6 +533,7 @@ static JSValue js_server_listen(JSContext *ctx, JSValueConst this_val,
     JSValue js_port = JS_GetPropertyStr(ctx, argv[0], "port");
 		if( JS_VALUE_GET_TAG( js_port ) == JS_TAG_UNDEFINED ){
 			perror( "connect: { port } required" );
+			JS_FreeValue(ctx, js_port);
 			return JS_EXCEPTION;
 		} else {
 			JS_ToInt32( ctx, &port, js_port );
@@ -539,10 +543,12 @@ static JSValue js_server_listen(JSContext *ctx, JSValueConst this_val,
 		JSValue js_key = JS_GetPropertyStr(ctx, argv[0], "key");
 		if( JS_VALUE_GET_TAG( js_key ) != JS_TAG_UNDEFINED )
 				key = JS_ToCString(ctx, js_key);
+		JS_FreeValue(ctx, js_key);
 
 		JSValue js_cert = JS_GetPropertyStr(ctx, argv[0], "cert");
 		if( JS_VALUE_GET_TAG( js_cert ) != JS_TAG_UNDEFINED )
 				cert = JS_ToCString(ctx, js_cert);
+		JS_FreeValue(ctx, js_cert);
 
 		int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 		if (listen_fd < 0) { perror("socket"); exit(EXIT_FAILURE); }
